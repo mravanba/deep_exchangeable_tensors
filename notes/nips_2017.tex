@@ -1,0 +1,250 @@
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+% \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading nips_2017
+%
+% to avoid loading the natbib package, add option nonatbib:
+% \usepackage[nonatbib]{nips_2017}
+
+\usepackage{nips_2017}
+
+% to compile a camera-ready version, add the [final] option, e.g.:
+% \usepackage[final]{nips_2017}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{ntheorem}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+
+\usepackage{url}
+\usepackage{todonotes}
+\usepackage{amsbsy}
+\usepackage{amsmath}
+%\usepackage{amsthm}
+\usepackage{amsmath}%
+\usepackage{MnSymbol}%
+\usepackage{wasysym}%
+\usepackage[cal=dutchcal,
+calscaled=1,
+bb=boondox,
+scr=euler]{mathalfa}
+
+\usepackage[capitalise]{cleveref}
+\crefformat{equation}{(#2#1#3)}
+
+\newcommand{\ie}[0]{\emph{i.e.},~}
+\newcommand{\eg}[0]{\emph{e.g.},~}
+\newcommand{\aka}[0]{a.k.a.~}
+\newcommand{\etal}{\emph{et al.~}}
+\newcommand{\etc}{\emph{etc.~}}
+\newcommand{\wrt}{w.r.t.~}
+\def\todo#1{{\color{red}{{todo:\ #1\ }}}}
+\newcommand{\defeq}{\ensuremath{\doteq}}
+
+\newcommand{\mat}[1]{\ensuremath{\mathbf{#1}}}
+\newcommand{\gr}[1]{\ensuremath{\mathcal{#1}}}
+\newcommand{\set}[1]{\ensuremath{\mathbb{#1}}}
+\renewcommand{\vec}[1]{\ensuremath{\overrightarrow{#1}}}
+\newcommand{\prm}[1]{\ensuremath{^{(#1)}}}
+\newcommand{\ttt}[1]{\ensuremath{^{(#1)}}}
+\newcommand{\grn}[2]{\ensuremath{\gr{#1}\prm{#2}}}
+\newcommand{\Trp}[0]{\ensuremath{^{\mathsf{T}}}}
+\newcommand{\XX}[0]{\ensuremath{\mat{X}}}
+\newcommand{\YY}[0]{\ensuremath{\mat{Y}}}
+\newcommand{\ZZ}[0]{\ensuremath{\mat{Z}}}
+\newcommand{\xx}[0]{\ensuremath{\mat{x}}}
+\newcommand{\yy}[0]{\ensuremath{\mat{y}}}
+\newcommand{\zz}[0]{\ensuremath{\mat{z}}}
+\newcommand{\Xset}[0]{\ensuremath{\set{X}}}
+\newcommand{\Yset}[0]{\ensuremath{\set{Y}}}
+\newcommand{\Rset}[0]{\ensuremath{\set{R}}}
+\renewcommand{\Re}[0]{\ensuremath{\set{R}}}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{observation}[theorem]{Observation}
+\newtheorem{claim}[theorem]{Claim}
+\newtheorem{objective}[theorem]{Objective}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}{Example}[section]
+\theoremsymbol{\ensuremath{\blacksquare}}
+\newtheorem*{proof}{Proof}%[section]
+
+\title{Exchangeable Tensor Convolution}
+
+% The \author macro works with any number of authors. There are two
+% commands used to separate the names and addresses of multiple
+% authors: \And and \AND.
+%
+% Using \And between authors leaves it to LaTeX to determine where to
+% break the lines. Using \AND forces a line break at that point. So,
+% if LaTeX puts 3 of 4 authors names on the first line, and the last
+% on the second line, try using \AND instead of \And before the third
+% author name.
+
+\author{
+  David S.~Hippocampus\thanks{Use footnote for providing further
+    information about author (webpage, alternative
+    address)---\emph{not} for acknowledging funding agencies.} \\
+  Department of Computer Science\\
+  Cranberry-Lemon University\\
+  Pittsburgh, PA 15213 \\
+  \texttt{hippo@cs.cranberry-lemon.edu} \\
+  %% examples of more authors
+  %% \And
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+  %% \AND
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+  %% \And
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+  %% \And
+  %% Coauthor \\
+  %% Affiliation \\
+  %% Address \\
+  %% \texttt{email} \\
+}
+
+\begin{document}
+% \nipsfinalcopy is no longer used
+
+\maketitle
+
+\begin{abstract}
+....
+\end{abstract}
+\section{Introduction}
+We derive this for matrices and then generalize to tensors.
+Also for now consider a single input/output channel.
+Lets add relevant papers to the bibliography as we proceed.
+
+\section{Notation}
+\begin{itemize}
+\item $\XX \in \Re^{N \times M}$
+\item $\xx \in \Re^{N M}$: vectorized $\XX$, also denoted by $\vec{\XX}$.
+\item $\grn{S}{N}$ symmetric group of \textit{all} permutations of $N$ objects
+\item $\grn{G}{N} = \{\grn{g}{N}_i\}_i$ a permutation group of $N$ objects 
+\item $\grn{g}{N}_i$ or $\mat{G}_i\prm{N}$ both can refer to the matrix form of the permutation $\grn{g}{N}_i \in \grn{G}{N}$.
+\end{itemize}
+
+\section{Problem}
+$\grn{S}{N} \times \grn{S}{M} < \grn{S}{N M}$ is the product of group of all permutations of $N$ and $M$ objects. It has $N! M!$ members compared to $(NM)!$ members of the group $\gr{S}_{N M}$.
+The members $\grn{g}{N,M} \in \grn{S}{N}$ can be represented by matrices $\mat{G}\prm{N M}$. This matrix ``acts'' on the vector $\vec{\XX}$.
+Alternatively we can represent them using the pair $(\mat{G}\prm{N}, \mat{G}\prm{M})$ where the ``action'' of this pair is defined on the matrix $\XX$:
+\begin{align*}
+  \mat{G}\prm{N M \times N M} \vec{\XX} \equiv \vec{\mat{G}\prm{N} \XX \mat{G}\prm{M}}
+\end{align*}
+
+\begin{objective}\label{obj:1}
+  Define a parameter matrix $\Theta \in \Re^{ N M \times N M}$ such that
+  \begin{itemize}
+  \item \textbf{Equivariance} (adding nonlinearity does not change anything):
+  \begin{align}
+    \mat{G}\prm{N M} \Theta \vec{\XX} = \Theta \mat{G}\prm{N M} \vec{\XX}\quad \forall \vec{\XX} \in \Re^{N M}, \mat{G}\prm{N M} \in \grn{S}{N} \times \grn{S}{M}
+  \end{align}
+\item \textbf{No equivariance wrt any other permutation}:
+  For any permutation of elements of the matrix $\XX$ that is not produced using a permutation of rows and columns $\mat{H} \in \grn{S}{N M}, \mat{H} \notin \grn{S}{N} \times \grn{S}{M}$, the
+  parameter matrix $\Theta$ should have the property that
+  \begin{align}
+   \exists \XX \quad s.t. \quad  \mat{H}\prm{N M} \Theta \vec{\XX} \neq \Theta \mat{H}\prm{N M} \vec{\XX} 
+  \end{align}
+  These two necessary and sufficient conditions of equivariance strictly define the form of $\Theta$.
+\end{itemize}
+\end{objective}
+
+
+\section{A Proposal}
+Here is a proposal for $\Theta \in \Re^{NM \times NM}$:
+\begin{align}
+  \Theta_{(m,n), (m',n')} \defeq
+  \begin{cases}
+    \theta_1 & m = m', n=n'\\
+    \theta_2 & m = m', n \neq n' \\
+    \theta_3 & m \neq m', n = n' \\
+    \theta_4 & m \neq m', n \neq n' \\
+  \end{cases}
+\end{align}
+Intuitively, each element ${m,n}$ at the output interacts with 1) corresponding input element; 2) all elements of the input in its row; 3) its column; 4) all other elements of $\XX$.
+
+We can write the product $\Theta \vec{X}$ as
+\begin{align}\label{eq:param}
+  \Theta * \XX \defeq \Theta \vec{X} = \theta'_1 \XX +  \theta'_2 \mat{1} (\mat{1}\Trp \XX) + \theta'_3 (\XX \mat{1})\mat{1}\Trp + \theta'_4 (\mat{1}\Trp \XX \mat{1})
+\end{align}
+where $\mat{1} = [1,\ldots,1]\Trp$ is the a column vector of appropriate size.
+
+Replacing the summation with average we get:
+\begin{align}\label{eq:param_avg}
+  \Theta * \XX \defeq \Theta \vec{X} = \theta''_1 \XX + \frac{\theta''_2}{N} \mat{1} (\mat{1}\Trp \XX) + \frac{\theta''_3}{M} (\XX \mat{1})\mat{1}\Trp + \frac{\theta''_4}{N M} (\mat{1}\Trp \XX \mat{1})
+\end{align}
+
+It should not be hard to show that this matrix commutes with any permutation of rows and columns (Equivariance condition in the objective). It follows as a Corollary of Proposition 3.1 in \citep{ravanbakhsh_symmetry}. However, it is not obvious whether the other direction (non-equivariance) holds or not. If it does not, it may still work well in practice.
+
+\begin{theorem}\todo{prove}
+  Parameter matrix $\Theta$ of \ref{eq:param} satisfies the conditions of Objective~\ref{obj:1} (??)
+\end{theorem}
+
+In practice, we substitute the summation with either average or max operation. This does not change equivariance properties.
+\todo{multiple channels}
+
+\section{Extension to Tensors}
+
+\section{Applications}
+\subsection{Tensor Completion}\todo{find applications}
+
+\subsection{Matrix Completion}
+Given partially observed tensor $\XX \in \Re^{M \times N \times K}$, where $K$ is the number of input-channels, we seek to estimate the unobserved values.
+Exchangeability is only within rows and columns (not channels).
+We use $\set{O} = \{(m,n)\}$ denote the set of observed indices. Here we have the option of 1) producing the output for \textit{all} entries ($m,n$)
+in \cref{eq:param} starting from the first layer, or 2) produce it only at the final layer or 3) only produce the output for entries $\set{Q} = \{m,n\}$
+where a query is made.
+Note that depending on this choice the layer \cref{eq:param} would change to only ``use'' the observed entries $\set{O}$ and ``produce'' the required ones $\set{Q}$.
+
+In collaborative filtering applications, the rows ($n$) represent customers and columns ($m$)
+represent products. In addition to customer/product ratings we may have feature-vectors $\yy \in \Re^{N \times K'}$ and
+$\zz \in \Re^{M \times K''}$ for each customer and product. Assuming $K' = K'' = 1$, the output of \cref{eq:param} is extended to incorporate
+these using $\theta_5 \yy \mat{1}\Trp + \theta_5 \mat{1} \zz\Trp$. For multiple input/output channels this needs to be extended.
+We also have the option of defining the layer such that we also have outputs corresponding to $\yy$ and $\zz$, in addition to the matrix output of $\XX$.
+
+Consider a deep model where the output of the final layer is $\YY \in \Re^{N \times M \times K}$,
+where $K=1$ shows that the last layer has a single channel.
+The loss function minimized through back-propagation is
+$\sum_{(m,n) \in \set{O}} \ell(X_{(m,n)}, \YY_{(m,n)})$, where $\ell$ is an appropriate matching loss, such as $L_2$ loss.
+
+\section{ToDo List}
+Theoretical side:
+\begin{enumerate}
+\item Try to prove the theorem. Does it satisfy the second part of Objective? 
+\item If not see whether a better parameter-sharing scheme exists.
+\item Write it for multiple channels
+\item Extend to tensors using a readable notation
+\end{enumerate}
+
+Implementation:
+\begin{enumerate}
+\item Implement this layer for dense input/output matrices
+\item Implement it for Sparse input output, when the sets $\set{O}$ and $\set{Q}$ are given
+\item We should be able to switch in/out max and mean
+\item Apply it to benchmark datasets (\eg movie-lens?) for matrix completion
+\end{enumerate}
+
+
+\bibliographystyle{abbrvnat} % sorted alphabetically, labeled with numbers
+{\bibliography{refs.bib}} % names file keylatex.bib as my bibliography file
+\end{document}
