@@ -65,7 +65,8 @@ scr=euler]{mathalfa}
 \newcommand{\Yset}[0]{\ensuremath{\set{Y}}}
 \newcommand{\Rset}[0]{\ensuremath{\set{R}}}
 \renewcommand{\Re}[0]{\ensuremath{\set{R}}}
-
+\newcommand{\thetas}[0]{\ensuremath{\boldsymbol{theta}}}
+\newcommand{\Thetas}[0]{\ensuremath{\boldsymbol{Theta}}}
 \newtheorem{theorem}{Theorem}[section]
 \newtheorem{lemma}[theorem]{Lemma}
 \newtheorem{proposition}[theorem]{Proposition}
@@ -79,7 +80,7 @@ scr=euler]{mathalfa}
 \theoremsymbol{\ensuremath{\blacksquare}}
 \newtheorem*{proof}{Proof}%[section]
 
-\title{Exchangeable Tensor Convolution}
+\title{Exchangeable Tensor Model}
 
 % The \author macro works with any number of authors. There are two
 % commands used to separate the names and addresses of multiple
@@ -194,57 +195,67 @@ Replacing the summation with average we get:
   \Theta * \XX \defeq \Theta \vec{X} = \theta''_1 \XX + \frac{\theta''_2}{N} \mat{1} (\mat{1}\Trp \XX) + \frac{\theta''_3}{M} (\XX \mat{1})\mat{1}\Trp + \frac{\theta''_4}{N M} (\mat{1}\Trp \XX \mat{1})
 \end{align}
 
-It should not be hard to show that this matrix commutes with any permutation of rows and columns (Equivariance condition in the objective). It follows as a Corollary of Proposition 3.1 in \citep{ravanbakhsh_symmetry}. However, it is not obvious whether the other direction (non-equivariance) holds or not. If it does not, it may still work well in practice.
+We need to show that this matrix commutes with any permutation of rows and columns (Equivariance condition in the objective). This also follows as a Corollary of Proposition 3.1 in \citep{ravanbakhsh_symmetry}. However, it is not obvious whether the other direction (non-equivariance) holds or not. If it does not, it may still work well in practice.
 
 \begin{theorem}\todo{prove}
   Parameter matrix $\Theta$ of \ref{eq:param} satisfies the conditions of Objective~\ref{obj:1} (??)
 \end{theorem}
 
 In practice, we substitute the summation with either average or max operation. This does not change equivariance properties.
-\todo{multiple channels}
+%\todo{multiple channels}
+\todo{any relation to low-rank completion?}
+
+\subsection{Multiple Channels}
+% In this setting $\XX \in \Re^{N \times M \times K}$, and parameters $\thetas_1,\ldots,\thetas_4 \in \Re^{K \times L}$, where $L$ is the number of output
+% channels. We use the lower-case of letters $N,M,K,L$ for indexing and write the layer for $\max$ operation instead of sum in \cref{eq:param}.
+% \begin{align}
+%   \label{eq:multi}
+%   \XX_{m,n,l} \defeq \XX_{m,n,l} \thetas_{k,l} + 
+% \end{align}
 
 \section{Extension to Tensors}
 
-\section{Applications}
-\subsection{Tensor Completion}\todo{find applications}
+% \section{Applications}
+% \subsection{Tensor Completion}\todo{find applications}
 
-\subsection{Matrix Completion}
-Given partially observed tensor $\XX \in \Re^{M \times N \times K}$, where $K$ is the number of input-channels, we seek to estimate the unobserved values.
-Exchangeability is only within rows and columns (not channels).
-We use $\set{O} = \{(m,n)\}$ denote the set of observed indices. Here we have the option of 1) producing the output for \textit{all} entries ($m,n$)
-in \cref{eq:param} starting from the first layer, or 2) produce it only at the final layer or 3) only produce the output for entries $\set{Q} = \{m,n\}$
-where a query is made.
-Note that depending on this choice the layer \cref{eq:param} would change to only ``use'' the observed entries $\set{O}$ and ``produce'' the required ones $\set{Q}$.
+% \subsection{Matrix Completion}
+% Given partially observed tensor $\XX \in \Re^{M \times N \times K}$, where $K$ is the number of input-channels, we seek to estimate the unobserved values.
+% Exchangeability is only within rows and columns (not channels).
+% We use $\set{O} = \{(m,n)\}$ denote the set of observed indices. Here we have the option of 1) producing the output for \textit{all} entries ($m,n$)
+% in \cref{eq:param} starting from the first layer, or 2) produce it only at the final layer or 3) only produce the output for entries $\set{Q} = \{m,n\}$
+% where a query is made.
+% Note that depending on this choice the layer \cref{eq:param} would change to only ``use'' the observed entries $\set{O}$ and ``produce'' the required ones $\set{Q}$.
 
-In collaborative filtering applications, the rows ($n$) represent customers and columns ($m$)
-represent products. In addition to customer/product ratings we may have feature-vectors $\yy \in \Re^{N \times K'}$ and
-$\zz \in \Re^{M \times K''}$ for each customer and product. Assuming $K' = K'' = 1$, the output of \cref{eq:param} is extended to incorporate
-these using $\theta_5 \yy \mat{1}\Trp + \theta_5 \mat{1} \zz\Trp$. For multiple input/output channels this needs to be extended.
-We also have the option of defining the layer such that we also have outputs corresponding to $\yy$ and $\zz$, in addition to the matrix output of $\XX$.
+% In collaborative filtering applications, the rows ($n$) represent customers and columns ($m$)
+% represent products. In addition to customer/product ratings we may have feature-vectors $\yy \in \Re^{N \times K'}$ and
+% $\zz \in \Re^{M \times K''}$ for each customer and product. Assuming $K' = K'' = 1$, the output of \cref{eq:param} is extended to incorporate
+% these using $\theta_5 \yy \mat{1}\Trp + \theta_6 \mat{1} \zz\Trp$. For multiple input/output channels this needs to be extended.
+% We also have the option of defining the layer such that we also have outputs corresponding to $\yy$ and $\zz$, in addition to the matrix output of $\XX$.
 
-Consider a deep model where the output of the final layer is $\YY \in \Re^{N \times M \times K}$,
-where $K=1$ shows that the last layer has a single channel.
-The loss function minimized through back-propagation is
-$\sum_{(m,n) \in \set{O}} \ell(X_{(m,n)}, \YY_{(m,n)})$, where $\ell$ is an appropriate matching loss, such as $L_2$ loss.
+% Consider a deep model where the output of the final layer is $\YY \in \Re^{N \times M \times K}$,
+% where $K=1$ shows that the last layer has a single channel.
+% The loss function minimized through back-propagation is
+% $\sum_{(m,n) \in \set{O}} \ell(X_{(m,n)}, \YY_{(m,n)})$, where $\ell$ is an appropriate matching loss, such as $L_2$ loss.
 
 \section{ToDo List}
 Theoretical side:
 \begin{enumerate}
 \item Try to prove the theorem. Does it satisfy the second part of Objective? 
 \item If not see whether a better parameter-sharing scheme exists.
-\item Write it for multiple channels
-\item Extend to tensors using a readable notation
+% \item Write it for multiple channels
+% \item Extend to tensors using proper notation
 \end{enumerate}
 
-Implementation:
-\begin{enumerate}
-\item Implement this layer for dense input/output matrices
-\item Implement it for Sparse input output, when the sets $\set{O}$ and $\set{Q}$ are given
-\item We should be able to switch in/out max and mean
-\item Apply it to benchmark datasets (\eg movie-lens?) for matrix completion
-\end{enumerate}
+% Implementation:
+% \begin{enumerate}
+% \item Implement this layer for dense input/output matrices
+% \item Implement it for Sparse input output, when the sets $\set{O}$ and $\set{Q}$ are given
+% \item Apply it to benchmark datasets (\eg movie-lens?) for matrix completion
+% \item What type of layer performs better for completion?
+% \end{enumerate}
 
 
 \bibliographystyle{abbrvnat} % sorted alphabetically, labeled with numbers
+\nocite{*}
 {\bibliography{refs.bib}} % names file keylatex.bib as my bibliography file
 \end{document}
