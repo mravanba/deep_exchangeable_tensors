@@ -55,6 +55,7 @@ scr=euler]{mathalfa}
 \newcommand{\ttt}[1]{\ensuremath{^{(#1)}}}
 \newcommand{\grn}[2]{\ensuremath{\gr{#1}\prm{#2}}}
 \newcommand{\Trp}[0]{\ensuremath{^{\mathsf{T}}}}
+\newcommand{\A}[0]{\ensuremath{\mat{A}}}
 \newcommand{\XX}[0]{\ensuremath{\mat{X}}}
 \newcommand{\YY}[0]{\ensuremath{\mat{Y}}}
 \newcommand{\ZZ}[0]{\ensuremath{\mat{Z}}}
@@ -140,9 +141,14 @@ Lets add relevant papers to the bibliography as we proceed.
 \begin{itemize}
 \item $\XX \in \Re^{N \times M}$
 \item $\xx \in \Re^{N M}$: vectorized $\XX$, also denoted by $\vec{\XX}$.
+\item $\A_{n,:} \in \Re^{1 \times M}$ is the $n^\text{th}$ row of any $\A \in \Re^{N \times M}$
+\item $\A_{:,m} \in \Re^{N \times 1}$ is the $m^\text{th}$ column of any $\A \in \Re^{N \times M}$
+\item $[N]$ denotes the sequence $\{n\}_{n=1,...,N} = (1, 2, ... N)$
+\item $[N \times M]$ denotes the sequence $\{(n, m)\}_{n \in [N], m \in [M]} = \big((1,1), (2,1),..., (N, M)\big)$
 \item $\grn{S}{N}$ symmetric group of \textit{all} permutations of $N$ objects
 \item $\grn{G}{N} = \{\grn{g}{N}_i\}_i$ a permutation group of $N$ objects 
 \item $\grn{g}{N}_i$ or $\mat{G}_i\prm{N}$ both can refer to the matrix form of the permutation $\grn{g}{N}_i \in \grn{G}{N}$.
+\item $\grn{g}{N}_i(n)$ refers to the result of applying $\grn{g}{N}_i$ to $n$, for any $n \in [N]$.
 \end{itemize}
 
 \section{Problem}
@@ -150,11 +156,11 @@ $\grn{S}{N} \times \grn{S}{M} < \grn{S}{N M}$ is the product of group of all per
 The members $\grn{g}{N,M} \in \grn{S}{N}$ can be represented by matrices $\mat{G}\prm{N M}$. This matrix ``acts'' on the vector $\vec{\XX}$.
 Alternatively we can represent them using the pair $(\mat{G}\prm{N}, \mat{G}\prm{M})$ where the ``action'' of this pair is defined on the matrix $\XX$:
 \begin{align*}
-  \mat{G}\prm{N M \times N M} \vec{\XX} \equiv \vec{\mat{G}\prm{N} \XX \mat{G}\prm{M}}
+  \mat{G}\prm{N N \times M M} \vec{\XX} \equiv \vec{\mat{G}\prm{N} \XX \mat{G}\prm{M}}
 \end{align*}
 
 \begin{objective}\label{obj:1}
-  Define a parameter matrix $\Theta \in \Re^{ N M \times N M}$ such that
+  Define a parameter matrix $\Theta \in \Re^{ N N \times M M}$ such that
   \begin{itemize}
   \item \textbf{Equivariance} (adding nonlinearity does not change anything):
   \begin{align}
@@ -174,12 +180,12 @@ Alternatively we can represent them using the pair $(\mat{G}\prm{N}, \mat{G}\prm
 \section{A Proposal}
 Here is a proposal for $\Theta \in \Re^{NM \times NM}$:
 \begin{align}
-  \Theta_{(m,n), (m',n')} \defeq
+  \Theta_{(n,m), (n',m')} \defeq
   \begin{cases}
-    \theta_1 & m = m', n=n'\\
-    \theta_2 & m = m', n \neq n' \\
-    \theta_3 & m \neq m', n = n' \\
-    \theta_4 & m \neq m', n \neq n' \\
+    \theta_1 & n = n', m = m'\\
+    \theta_2 & n = n', m \neq m' \\
+    \theta_3 & n \neq n', m = m' \\
+    \theta_4 & n \neq n', m \neq m' \\
   \end{cases}
 \end{align}
 Intuitively, each element ${m,n}$ at the output interacts with 1) corresponding input element; 2) all elements of the input in its row; 3) its column; 4) all other elements of $\XX$.
@@ -197,9 +203,123 @@ Replacing the summation with average we get:
 
 We need to show that this matrix commutes with any permutation of rows and columns (Equivariance condition in the objective). This also follows as a Corollary of Proposition 3.1 in \citep{ravanbakhsh_symmetry}. However, it is not obvious whether the other direction (non-equivariance) holds or not. If it does not, it may still work well in practice.
 
-\begin{theorem}\todo{prove}
-  Parameter matrix $\Theta$ of \ref{eq:param} satisfies the conditions of Objective~\ref{obj:1} (??)
+\begin{proposition}\label{prop:H1}
+  Let $\grn{h}{NM} \in \grn{S}{NM}$. If $\grn{h}{NM} \not\in \grn{S}{N} \times \grn{S}{M}$, then at least one of the following holds:
+  \begin{enumerate}
+    \item[(i)]
+      There exist $n, n' \in [N]$ and $m, m' \in [M]$ such that 
+      \begin{align*}
+        \grn{h}{NM}((n, m)) &= (n', m), \quad \text{but} \\
+        \grn{h}{NM}((n, m')) &\neq (n', m'). 
+      \end{align*}
+    \item[(ii)]
+      There exist $n, n' \in [N]$ and $m, m' \in [M]$ such that 
+      \begin{align*}
+        \grn{h}{NM}((n, m)) &= (n, m'), \quad \text{but} \\
+        \grn{h}{NM}((n', m)) &\neq (n', m'). 
+      \end{align*}
+  \end{enumerate}
+\end{proposition}
+If we think of $\grn{h}{NM}$ as operating on $\vec{\XX}$, the vectorization of some matrix $\XX \in \Re^{N \times M}$, then item (i) says that $\grn{h}{NM}$ `breaks' the $n^\text{th}$ row of $\XX$ (i.e., $\grn{h}{NM}$ maps the $m^\text{th}$ and $m'$$^\text{th}$ elements of row $n$ to different rows). Similarly, item (ii) says that $\grn{h}{NM}$ `breaks' the $m^\text{th}$ column of $\XX$ by mapping elements $n$ and $n'$ to different columns. Intuitively, this means that $\mat{H}\prm{NM} \vec{\XX}$ cannot be expressed as $\vec{\mat{H}\prm{N} \XX \mat{H}\prm{M}}$ for any $\mat{H}\prm{N} \in \grn{S}{N}$, $\mat{H}\prm{M} \in \grn{S}{M}$.
+
+\begin{proof}
+We prove the contrapositive. Suppose neither (i) nor (ii) holds. Let $m$ and $m'$ be the indices of two particular columns of $\XX$. The negation of item (i) says that $\grn{h}{NM}$ applies the same mapping to each element of $m$ as it does to each element of $m'$. Call this mapping $\pi_r$ and note that $\pi_r \in \grn{S}{N}$. Similarly, let $n$ and $n'$ be two particular rows of $\XX$. The negation of (ii) says that $\grn{h}{NM}$ applies the same mapping to each element of $n$ as it does to each element of $n'$. Call this mapping $\pi_c$, and note that $\pi_c \in \grn{S}{M}$. Thus, we have that $\grn{h}{NM}( \vec{\XX}) = \pi_r \XX \pi_c$ and so $\grn{h}{NM} \in \grn{S}{N} \times \grn{S}{M}$, completing the proof.
+\end{proof}
+\todo{maybe describe connection to Kronecker product?} \\
+
+Note that, if $\grn{h}{NM} \in \grn{S}{NM}$ is any permutation, and $\mat{H}\prm{NM} $ is the associated matrix, then it is easily verified that:
+\begin{align}\label{eqn:H}
+  \grn{h}{NM}((n, m)) = (n', m') &\iff \big( \mat{H}\prm{NM}  \big)_{(n',m'), (n,m)} = 1
+\end{align}
+for any $n,n' \in [N]$ and $m,m' \in [M]$.
+
+\begin{proposition}\label{prop:H2}
+Let $\grn{h}{NM} \in \grn{S}{NM}$, and $\grn{h}{NM} \not\in \grn{S}{N} \times \grn{S}{M}$, with $\mat{H}\prm{NM} \in \{0,1\}^{NM \times NM}$ the corresponding matrix. Let $\Theta \in \Re^{NM \times NM}$ be as described above. Then the following hold:
+  \begin{enumerate}
+    \item[(i)]
+      If there exist $n, n' \in [N]$ and $m, m' \in [M]$ such that 
+      \begin{align*}
+        \grn{h}{NM}((n, m)) &= (n', m), \quad \text{and} \\
+        \grn{h}{NM}((n, m')) &\neq (n', m'), 
+      \end{align*}
+      then
+      \begin{align*}
+        \big( \mat{H}\prm{N M} \Theta \big)_{(n',m'), (n,m)} \neq \big( \Theta \mat{H}\prm{N M} \big)_{(n',m'), (n,m)}
+      \end{align*}
+    \item[(ii)]
+      If there exist $n, n' \in [N]$ and $m, m' \in [M]$ such that 
+      \begin{align*}
+        \grn{h}{NM}((n, m)) &= (n, m'), \quad \text{and} \\
+        \grn{h}{NM}((n', m)) &\neq (n', m'), 
+      \end{align*}
+      then
+      \begin{align*}
+        \big( \mat{H}\prm{N M} \Theta \big)_{(n,m'), (n',m)} \neq \big( \Theta \mat{H}\prm{N M} \big)_{(n,m'), (n',m)}
+      \end{align*}
+  \end{enumerate}
+\end{proposition}
+\begin{proof}
+  We prove items (i) and (ii) in turn:
+  \begin{enumerate}
+  
+  
+    \item[(i)] First, note that if $\grn{h}{NM}((n, m')) \neq (n', m')$, then by the observation (\ref{eqn:H}) above $H_{(n',m'), (n,m')} \neq 1$. Thus, we have
+      \begin{align*}
+        \big( \mat{H}\prm{N M} \Theta \big)_{(n',m'), (n,m)} &= \big(\mat{H}\prm{N M}\big)_{(n',m'),:} \big(\Theta \big)_{:,(n,m)} \\
+        &= \sum_{(i,j) \in [N \times M]} \big(\mat{H}\prm{N M}\big)_{(n',m'),(i,j)} \big(\Theta \big)_{(i,j),(n,m)} \\
+        &\neq \Theta_{(n,m'),(n,m)} \\
+        &= \theta_2
+      \end{align*}
+      
+      But also by observation (\ref{eqn:H}) above, since $\grn{h}{NM}((n, m)) = (n', m)$ , we have $H_{(n',m), (n,m)} = 1$. And so
+      \begin{align*}
+        \big(\Theta \mat{H}\prm{N M} \big)_{(n',m'), (n,m)} &= \big(\Theta \big)_{(n',m'), :} \big(\mat{H}\prm{N M} \big)_{:, (n,m)} \\
+        &= \sum_{(i,j) \in [N \times M]} \big(\Theta \big)_{(n',m'), (i,j)} \big(\mat{H}\prm{N M} \big)_{(i,j), (n,m)} \\
+        &= \Theta_{(n', m'), (n', m)} \\
+        &= \theta_2
+       \end{align*}
+    This proves item (i). 
+    
+    
+    
+    
+    \item[(ii)]
+      Similarly, if $\grn{h}{NM}((n, m)) = (n, m')$ then $H_{(n,m'), (n,m)} = 1$ and so
+      \begin{align*}
+        \big( \mat{H}\prm{N M} \Theta \big)_{(n,m'), (n',m)} &= \big(\mat{H}\prm{N M}\big)_{(n,m'),:} \big(\Theta \big)_{:,(n',m)} \\
+        &= \sum_{(i,j) \in [N \times M]} \big(\mat{H}\prm{N M}\big)_{(n,m'),(i,j)} \big(\Theta \big)_{(i,j),(n',m)} \\
+        &= \Theta_{(n,m), (n',m)} \\
+        &= \theta_3
+      \end{align*}
+      
+        And since $\grn{h}{NM}((n', m)) \neq (n', m')$, we have $H_{(n',m'), (n',m)} \neq 1$, and 
+      \begin{align*}
+         \big(\Theta \mat{H}\prm{N M} \big)_{(n,m'), (n',m)} &= \big(\Theta \big)_{(n,m'), :} \big(\mat{H}\prm{N M} \big)_{:, (n',m)} \\
+         &= \sum_{(i,j) \in [N \times M]} \big(\Theta \big)_{(n,m'), (i,j)} \big(\mat{H}\prm{N M} \big)_{(i,j), (n',m)} \\
+         &\neq \Theta_{(n,m'), (n',m')} \\
+         &= \theta_3
+      \end{align*}
+      Which proves item (ii) and thus the Proposition. 
+   \end{enumerate}
+   
+   
+\end{proof}
+
+\begin{theorem}
+  Parameter matrix $\Theta$ of \ref{eq:param} satisfies the conditions of Objective~\ref{obj:1}.
 \end{theorem}
+\begin{proof}
+  Let $\XX \in \Re^{N \times M}$. We will prove that both points of Objective~\ref{obj:1} are satisfied by $\Theta$. 
+  \begin{itemize}
+    \item \textbf{Equivariance}: Let $\grn{g}{NM} \in \grn{S}{N} \times \grn{S}{M}$, and let $\mat{G}\prm{NM}$ be the corresponding matrix representation. Then ... \todo{finish this part}
+    \item \textbf{No equivariance wrt any other permutation}: Let $\grn{h}{NM} \in \grn{S}{NM}$, with $\grn{h}{NM} \not\in \grn{S}{N} \times \grn{S}{M}$, and let $\mat{H}\prm{NM}$ be the corresponding matrix representation. Then an immediate consequence of Propositions \ref{prop:H1} and \ref{prop:H2} is that 
+  \begin{align*}
+     \mat{H}\prm{N M} \Theta \neq \Theta \mat{H}\prm{N M}
+  \end{align*}
+  \end{itemize}
+  Thus both points of Objective~\ref{obj:1} are satisfied, proving the theorem. 
+  
+\end{proof}
 
 In practice, we substitute the summation with either average or max operation. This does not change equivariance properties.
 %\todo{multiple channels}
@@ -219,7 +339,7 @@ In practice, we substitute the summation with either average or max operation. T
 % \subsection{Tensor Completion}\todo{find applications}
 
 % \subsection{Matrix Completion}
-% Given partially observed tensor $\XX \in \Re^{M \times N \times K}$, where $K$ is the number of input-channels, we seek to estimate the unobserved values.
+% Given partially observed tensor $\XX \in \Re^{N \times M \times K}$, where $K$ is the number of input-channels, we seek to estimate the unobserved values.
 % Exchangeability is only within rows and columns (not channels).
 % We use $\set{O} = \{(m,n)\}$ denote the set of observed indices. Here we have the option of 1) producing the output for \textit{all} entries ($m,n$)
 % in \cref{eq:param} starting from the first layer, or 2) produce it only at the final layer or 3) only produce the output for entries $\set{Q} = \{m,n\}$
@@ -259,3 +379,10 @@ Theoretical side:
 \nocite{*}
 {\bibliography{refs.bib}} % names file keylatex.bib as my bibliography file
 \end{document}
+
+
+
+
+     
+
+
