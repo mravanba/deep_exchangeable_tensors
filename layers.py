@@ -37,7 +37,7 @@ def matrix_dense(
         mat = inputs.get('input', None)#N x M x K
         output =  tf.convert_to_tensor(0, np.float32)
         mask = inputs.get('mask', None)#N x M
-        if mat is not None:
+        if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
             N,M,K = mat.get_shape().as_list()            
             n_features = mat.get_shape()[2]
             norm_N = np.float32(N)
@@ -131,8 +131,8 @@ def matrix_dropout(inputs,#dropout along both axes
     inp = inputs['input']
     mask = inputs.get('mask', None)    
     N, M, K = inp.get_shape().as_list()
-    out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,M,1], training=is_training)
-    #out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)    
+    out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
+    out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)    
     return {'input':out, 'mask':mask}
 
 def dense(

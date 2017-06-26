@@ -8,17 +8,17 @@ import tensorflow as tf
 import layers as ly
 import pdb
 
-class Model:
+class Model: #constructs a series of connected layers from layers.py from the given list of dictionaries.
     
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
-            setattr(self, "_"+key, value)
+            setattr(self, "_"+key, value)#set attributes from the keywords: all starting with and underscore
 
-        self.check_vitals()
-        self.setup() #1 
+        self.check_vitals() #see if necessary attributes are passed
+        self.setup() #set the default values for all the layers from the layer_default. Note that _layers is just the list of layers
 
 
-    def get_attr(self, attr, default=None):
+    def get_attr(self, attr, default=None):#a more verbose way of getting attributes
         if self._verbose > 2:
             print("retrieving %s" % (attr), end=" ")
         if hasattr(self, attr):
@@ -54,13 +54,13 @@ class Model:
             helper.print_dims(prefix="input: ", **new_product)
         all_layers_returned = self.get_attr("all_layers_returned", False)
         scope = self.get_attr("_scope", "prediction")
-        with tf.variable_scope(scope, reuse=reuse):
+        with tf.variable_scope(scope, reuse=reuse):#construct the neural network from the self._layers list of layers
             for l, layer in enumerate(self._layers):
-                if hasattr(ly, layer['type']):
+                if hasattr(ly, layer['type']):#see if a method in the module layers.py with this layer type exists
                     with tf.variable_scope(str(l)) as l_scope:
                         layer_params = deepcopy(layer)
-                        del layer_params['type']
-                        new_product = getattr(ly, layer['type'])(new_product, **layer_params, verbose=self._verbose, scope=l_scope, is_training=is_training)
+                        del layer_params['type'] #because type is not used when passing layer keywords to the actual method in the layers.py module
+                        new_product = getattr(ly, layer['type'])(new_product, **layer_params, verbose=self._verbose, scope=l_scope, is_training=is_training)#get the output of the layer by calling the appropriate method in layers.py
                         if verbose > 0:
                             helper.print_dims(prefix="layer "+str(l)+" ("+layer['type']+") ", **new_product)
                 else:
@@ -72,13 +72,4 @@ class Model:
                 products = new_product
         return products
 
-    # @define_scope
-    # def optimization(self):
-    #     pass
-
-
-    # @define_scope
-    # def monitor(self):
-    #     pass
-        
     
