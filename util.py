@@ -63,31 +63,34 @@ def get_data(dataset='movielens-small',
             mask_valid[ratings.userId[rand_perm[n_test:n_valid]]-1,movies[rand_perm[n_test:n_valid]]] = 1
             data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None],
                         'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
-                
             return data
     elif 'movielens-100k' in dataset:
+        print("\nget_data(movielens-100k) : ignoring train, test, valid - using u1.base/u1.test training/test split\n")
         r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
-        path = os.path.join(data_folder,'ml-100k/u.data')        
-        ratings = pd.read_csv(path, sep='\t', names=r_cols,
-                              encoding='latin-1')
+        path_tr = os.path.join(data_folder,'ml-100k/u1.base')
+        path_valid = os.path.join(data_folder,'ml-100k/u1.test')
+        ratings_tr = pd.read_csv(path_tr, sep='\t', names=r_cols, encoding='latin-1')        
+        ratings_valid = pd.read_csv(path_valid, sep='\t', names=r_cols, encoding='latin-1')
+        ratings_valid = ratings_valid.sample(frac=1) #random shuffle before test/validation split        
+        ratings = pd.concat([ratings_tr, ratings_valid], ignore_index=True)
+        n_ratings = ratings.rating.shape[0]
+        n_ratings_tr = ratings_tr.rating.shape[0]
+        n_ratings_valid = ratings_valid.rating.shape[0]
         n_users = np.max(ratings.user_id)
         _, movies = np.unique(ratings.movie_id, return_inverse=True)
         n_movies = np.max(movies) + 1
+        n_train = n_ratings_tr        
+        n_test = n_train + int(np.floor(n_ratings * test))
+        n_valid = n_test + n_ratings_valid
         mat = np.zeros((n_users, n_movies), dtype=np.float32)
         mat[ratings.user_id-1, movies] = ratings.rating
-        n_ratings = ratings.rating.shape[0]
-        n_train = int(np.floor(n_ratings * train))
-        n_test = n_train + int(np.floor(n_ratings * test))
-        n_valid = n_test + int(np.floor(n_ratings * valid))                        
-        rand_perm = np.random.permutation(n_ratings)
-        mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
-        mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)        
         mask_valid = np.zeros((n_users, n_movies), dtype=np.float32)
-        mask_tr[ratings.user_id[rand_perm[:n_train]]-1, movies[rand_perm[:n_train]]] = 1
-        mask_ts[ratings.user_id[rand_perm[n_train:n_test]]-1,movies[rand_perm[n_train:n_test]]] = 1
-        mask_valid[ratings.user_id[rand_perm[n_test:n_valid]]-1,movies[rand_perm[n_test:n_valid]]] = 1
-        data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None],
-                    'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
+        mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_tr[ratings.user_id[:n_train]-1, movies[:n_train]] = 1
+        mask_ts[ratings.user_id[n_train:n_test]-1, movies[n_train:n_test]] = 1
+        mask_valid[ratings.user_id[n_test:n_valid]-1, movies[n_test:n_valid]] = 1
+        data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None], 'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
         pdb.set_trace()
         return data
         
