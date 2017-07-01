@@ -64,6 +64,7 @@ def get_data(dataset='movielens-small',
             data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None],
                         'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
             return data
+
     elif 'movielens-100k' in dataset:
         print("\nget_data(movielens-100k) : ignoring train, test, valid - using u1.base/u1.test training/test split\n")
         r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
@@ -94,7 +95,34 @@ def get_data(dataset='movielens-small',
         pdb.set_trace()
         return data
         
-        
+    elif 'movielens-1M' in dataset:
+        r_cols = ['user_id', None, 'movie_id', None, 'rating', None, 'unix_timestamp']
+        path = os.path.join(data_folder, 'ml-1m/ratings.dat')
+
+        ratings = pd.read_csv(path, sep=':', names=r_cols, encoding='latin-1')
+        r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
+        ratings = ratings[r_cols]
+        # ratings = pd.read_csv(path, sep='::', names=r_cols, encoding='latin-1', engine='python') # pandas treats '::' as a regex and uses pytohn engine. Does it matter? 
+
+        n_users = np.max(ratings.user_id)
+        _, movies = np.unique(ratings.movie_id, return_inverse=True)
+        n_movies = np.max(movies) + 1
+        mat = np.zeros((n_users, n_movies), dtype=np.float32)
+        mat[ratings.user_id-1, movies] = ratings.rating
+        n_ratings = ratings.rating.shape[0]
+        n_train = int(np.floor(n_ratings * train))
+        n_test = n_train + int(np.floor(n_ratings * test))
+        n_valid = n_test + int(np.floor(n_ratings * valid))
+        rand_perm = np.random.permutation(n_ratings)
+        mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_valid = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_tr[ratings.user_id[rand_perm[:n_train]]-1, movies[rand_perm[:n_train]]] = 1
+        mask_ts[ratings.user_id[rand_perm[n_train:n_test]]-1,movies[rand_perm[n_train:n_test]]] = 1
+        mask_valid[ratings.user_id[rand_perm[n_test:n_valid]]-1,movies[rand_perm[n_test:n_valid]]] = 1
+        data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None], 'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
+        pdb.set_trace()
+        return data
     else:
         raise Exception("unknown dataset")
     

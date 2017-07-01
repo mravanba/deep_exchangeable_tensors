@@ -32,7 +32,8 @@ def rec_loss_fn(mat, mask, rec):
 
 def main(opts):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-    data = get_data('movielens-100k', train=.8, valid=.2, test=.001)
+    # data = get_data('movielens-100k', train=.8, valid=.2, test=.001)
+    data = get_data('movielens-1M', train=.8, valid=.2, test=.001)
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat'].shape
@@ -67,7 +68,7 @@ def main(opts):
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         sess.run(tf.global_variables_initializer())
-        iters_per_epoch = N//maxN * M//maxM# a bad heuristic: the whole matrix is in expectation covered in each epoch
+        iters_per_epoch = N//maxN * M//maxM # a bad heuristic: the whole matrix is in expectation covered in each epoch
         
         for ep in range(opts['epochs']):
             begin = time.time()
@@ -89,7 +90,7 @@ def main(opts):
             
 if __name__ == "__main__":
     
-    opts ={'epochs': 10,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
