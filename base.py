@@ -33,8 +33,9 @@ class Model: #constructs a series of connected layers from layers.py from the gi
         
     def check_vitals(self):
         assert hasattr(self, "_layers")
-        assert hasattr(self, "_layer_defaults")     
+        assert hasattr(self, "_layer_defaults")
         assert hasattr(self, "_verbose")
+        assert hasattr(self, "_mode")
 
         
     def setup(self):
@@ -60,6 +61,7 @@ class Model: #constructs a series of connected layers from layers.py from the gi
                     with tf.variable_scope(str(l)) as l_scope:
                         layer_params = deepcopy(layer)
                         del layer_params['type'] #because type is not used when passing layer keywords to the actual method in the layers.py module
+                        layer_params['mode'] = self._mode # pass sparse/dense mode to layers 
                         new_product = getattr(ly, layer['type'])(new_product, **layer_params, verbose=self._verbose, scope=l_scope, is_training=is_training)#get the output of the layer by calling the appropriate method in layers.py
                         if verbose > 0:
                             helper.print_dims(prefix="layer "+str(l)+" ("+layer['type']+") ", **new_product)

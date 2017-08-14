@@ -25,6 +25,7 @@ from tqdm import tqdm
 import glob
 from copy import deepcopy
 import functools
+from sparse_util import *
 
 
 
@@ -65,8 +66,59 @@ def get_data(dataset='movielens-small',
                         'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
             return data
 
+
+    elif 'movielens-TEST' in dataset:        
+        r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
+        path_tr = os.path.join(data_folder,'ml-TEST/u1.base')
+        path_valid = os.path.join(data_folder,'ml-TEST/u1.test')
+        ratings_tr = pd.read_csv(path_tr, sep='\t', names=r_cols, encoding='latin-1')        
+        ratings_valid = pd.read_csv(path_valid, sep='\t', names=r_cols, encoding='latin-1')
+        ratings_valid = ratings_valid.sample(frac=1) #random shuffle before test/validation split        
+        ratings = pd.concat([ratings_tr, ratings_valid], ignore_index=True)
+        n_ratings = ratings.rating.shape[0]
+        n_ratings_tr = ratings_tr.rating.shape[0]
+        n_ratings_valid = ratings_valid.rating.shape[0]
+        n_users = np.max(ratings.user_id)
+        _, movies = np.unique(ratings.movie_id, return_inverse=True)
+        n_movies = np.max(movies) + 1
+        n_train = n_ratings_tr        
+        n_test = n_train + int(np.floor(n_ratings * test))
+        n_valid = n_test + n_ratings_valid
+        mat = np.zeros((n_users, n_movies), dtype=np.float32)
+        mat[ratings.user_id-1, movies] = ratings.rating
+        
+
+        mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)        
+        mask_valid = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_tr[ratings.user_id[:n_train]-1, movies[:n_train]] = 1
+        mask_ts[ratings.user_id[n_train:n_test]-1, movies[n_train:n_test]] = 1
+        mask_valid[ratings.user_id[n_test:n_valid]-1, movies[n_test:n_valid]] = 1
+
+        if 'dense' in mode:
+            data = {'mat':mat[:,:,None],
+                    'mask_tr':mask_tr[:,:,None],
+                    'mask_ts':mask_ts[:,:,None],
+                    'mask_val':mask_valid[:,:,None]}
+        elif 'sparse' in mode:
+            mat_sp = dense_array_to_sparse(mat, expand_dims=True)
+            mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
+            mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
+            mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+
+            data = {'mat':mat[:,:,None],
+                    'mask_tr':mask_tr[:,:,None],
+                    'mask_val':mask_valid[:,:,None],
+                    'mask_ts':mask_ts[:,:,None],
+                    'mat_sp':mat_sp,
+                    'mask_tr_sp':mask_tr_sp,
+                    'mask_val_sp':mask_val_sp}
+        # pdb.set_trace()
+        return data
+
+
     elif 'movielens-100k' in dataset:
-        print("\nget_data(movielens-100k) : ignoring train, test, valid - using u1.base/u1.test training/test split\n")
+        print("\n--> get_data(movielens-100k) : ignoring inputs <train>, <valid> - using u1.base/u1.test training/test split\n")
         r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
         path_tr = os.path.join(data_folder,'ml-100k/u1.base')
         path_valid = os.path.join(data_folder,'ml-100k/u1.test')
@@ -91,9 +143,27 @@ def get_data(dataset='movielens-small',
         mask_tr[ratings.user_id[:n_train]-1, movies[:n_train]] = 1
         mask_ts[ratings.user_id[n_train:n_test]-1, movies[n_train:n_test]] = 1
         mask_valid[ratings.user_id[n_test:n_valid]-1, movies[n_test:n_valid]] = 1
-        data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None], 'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
-        pdb.set_trace()
-        return data
+        
+        if 'dense' in mode:
+            data = {'mat':mat[:,:,None],
+                    'mask_tr':mask_tr[:,:,None],
+                    'mask_ts':mask_ts[:,:,None],
+                    'mask_val':mask_valid[:,:,None]}
+        elif 'sparse' in mode:
+            mat_sp = dense_array_to_sparse(mat, expand_dims=True)
+            mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
+            mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
+            mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+
+            data = {'mat':mat[:,:,None],
+                    'mask_tr':mask_tr[:,:,None],
+                    'mask_val':mask_valid[:,:,None],
+                    'mask_ts':mask_ts[:,:,None],
+                    'mat_sp':mat_sp,
+                    'mask_tr_sp':mask_tr_sp,
+                    'mask_val_sp':mask_val_sp}
+        # pdb.set_trace()
+        return data   
         
     elif 'movielens-1M' in dataset:
         r_cols = ['user_id', None, 'movie_id', None, 'rating', None, 'unix_timestamp']
@@ -120,8 +190,28 @@ def get_data(dataset='movielens-small',
         mask_tr[ratings.user_id[rand_perm[:n_train]]-1, movies[rand_perm[:n_train]]] = 1
         mask_ts[ratings.user_id[rand_perm[n_train:n_test]]-1,movies[rand_perm[n_train:n_test]]] = 1
         mask_valid[ratings.user_id[rand_perm[n_test:n_valid]]-1,movies[rand_perm[n_test:n_valid]]] = 1
-        data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None], 'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
-        pdb.set_trace()
+        
+        # data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None], 'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
+        if 'dense' in mode:
+            data = {'mat':mat[:,:,None],
+                    'mask_tr':mask_tr[:,:,None],
+                    'mask_ts':mask_ts[:,:,None],
+                    'mask_val':mask_valid[:,:,None]}
+        elif 'sparse' in mode:
+            mat_sp = dense_array_to_sparse(mat, expand_dims=True)
+            mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
+            mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
+            mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+
+            data = {'mat':mat[:,:,None],
+                    'mask_tr':mask_tr[:,:,None],
+                    'mask_val':mask_valid[:,:,None],
+                    'mask_ts':mask_ts[:,:,None],
+                    'mat_sp':mat_sp,
+                    'mask_tr_sp':mask_tr_sp,
+                    'mask_val_sp':mask_val_sp}
+
+        # pdb.set_trace()
         return data
     else:
         raise Exception("unknown dataset")

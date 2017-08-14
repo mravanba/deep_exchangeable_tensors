@@ -12,7 +12,10 @@ def print_dims(prefix="", delimiter="\t", **kwargs):
                 shape = [x for x in t.get_shape().as_list()]
                 print(key,":",shape, delimiter,end=" ")
             except:
-                print(key,":",t.get_shape(), delimiter,end=" ")
+                if hasattr(t, 'shape'):
+                    print(key,":",t.get_shape(), delimiter,end=" ")
+                else:
+                    print(key,":",delimiter,end=" ")
             
     print(flush=True)
     
