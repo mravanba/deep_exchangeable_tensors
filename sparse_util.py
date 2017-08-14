@@ -3,7 +3,7 @@ import tensorflow as tf
 import math
 
 
-
+## Just used to get sparse representation of input data
 def dense_array_to_sparse(x, expand_dims=False):
     if expand_dims: 
         x = np.expand_dims(x, 2)
@@ -12,7 +12,7 @@ def dense_array_to_sparse(x, expand_dims=False):
     shape = x.shape
     return {'indices':inds, 'values':vals, 'dense_shape':shape}
 
-
+## Mostly used for debugging 
 def sparse_array_to_dense(x_sp, shape=None):
     if shape is None:
         shape = x_sp['dense_shape']    
@@ -37,6 +37,7 @@ def sparse_tensor_to_dense(x_sp, shape=None):
     # return tf.sparse_tensor_to_dense(x_sp)
 
 
+## This function works, but it calls sparse_tensor_to_dense, which could be inefficient 
 def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
     if shape is None:
         shape = x_sp.dense_shape
@@ -76,6 +77,7 @@ def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
 #     return tf.SparseTensorValue(inds, vals, shape)
 
 
+# ## This version doesn't call sparse_tensor_to_dense(), but it eats a large amout of memory. I am not sure why  
 # def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
 #     if shape is None:
 #         shape = x_sp.dense_shape
@@ -94,14 +96,16 @@ def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
 #     vals = tf.gather_nd(vals, tf.where(tf.not_equal(vals, 0)))
     
 #     return tf.SparseTensorValue(inds, vals, shape)
+    
 
 
-
+## Like tf.tensordot, where first input is sparse 
 def sparse_tensordot(tensor_sp, param, in_shape, out_shape):
     output = tf.reshape(tf.sparse_tensor_dense_matmul(tf.sparse_reshape(tensor_sp, in_shape), param), out_shape)
     return output
 
 
+## Eating huge amounts of memory 
 def sparse_dropout(x_sp, rate=0.0, training=False, shape=None):    
     if not training:
         return x_sp
@@ -114,14 +118,14 @@ def sparse_dropout(x_sp, rate=0.0, training=False, shape=None):
     n_mask = tf.cast(tf.not_equal(x_sp.indices[:,0], n_inds), dtype=tf.int32)
     n_mask = tf.reduce_prod(n_mask, axis=0)
 
-    vals = tf.dynamic_partition(x_sp.values, n_mask, num_partitions=2)[1]
+    vals = tf.dynamic_partition(x_sp.values, n_mask, num_partitions=2)[1] ## I think this function is eating large amounts of memory 
     inds = tf.dynamic_partition(x_sp.indices, n_mask, num_partitions=2)[1]
 
     m_inds = tf.expand_dims(np.random.choice(range(M), size=math.floor(M*rate), replace=False), axis=1) ## Columns to drop out 
     m_mask = tf.cast(tf.not_equal(inds[:,1], m_inds), dtype=tf.int32)
     m_mask = tf.reduce_prod(m_mask, axis=0)
 
-    vals = tf.dynamic_partition(vals, m_mask, num_partitions=2)[1]
+    vals = tf.dynamic_partition(vals, m_mask, num_partitions=2)[1] 
     inds = tf.dynamic_partition(inds, m_mask, num_partitions=2)[1]
 
     vals = vals * (1./rate)**2  ## scale entries to maintain total sum (matching tf.layers.dropout)
@@ -129,6 +133,7 @@ def sparse_dropout(x_sp, rate=0.0, training=False, shape=None):
     return tf.SparseTensorValue(inds, vals, shape)
 
 
+## This one seems to be working well. It produces a dense tensor 
 def sparse_reduce(x_sp, mode='sum', axis=None, shape=None, zero_threshold=0.00001):
     if shape is None:
         shape = x_sp.dense_shape

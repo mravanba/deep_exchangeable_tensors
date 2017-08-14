@@ -49,16 +49,6 @@ def matrix_dense(
                 norm_M = np.float32(M)
                 norm_NM = np.float32(N*M)
                 if mask is not None:
-
-                    # mat = dense_tensor_to_sparse(mat, shape=[N,M,K])
-                    # mask = dense_tensor_to_sparse(mask, shape=[N,M,1])
-                    
-                    # mat = sparse_tensor_mask_to_sparse(mat, mask, [N,M,K])
-
-                    # mat = sparse_tensor_to_dense(mat, shape=[N,M,K])
-                    # mask = sparse_tensor_to_dense(mask, shape=[N,M,1])
-
-
                     mat = mat * mask
                     norm_N = tf.reduce_sum(mask, axis=0, keep_dims=True) + eps# 1, M, 1
                     norm_M = tf.reduce_sum(mask, axis=1, keep_dims=True) + eps# N, 1, 1
@@ -78,12 +68,10 @@ def matrix_dense(
                 theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
                 theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
                 
-
-                # output = tf.reshape(tf.matmul(tf.reshape(mat, [N*M, K]), theta_0), [N,M,units])
+                # output = tf.reshape(tf.matmul(tf.reshape(mat, [N*M, K]), theta_0), [N,M,units]) 
                 # output += tf.reshape(tf.matmul(tf.reshape(mat_marg_0, [-1, K]), theta_1), [1,M,units])
                 # output += tf.reshape(tf.matmul(tf.reshape(mat_marg_1, [-1, K]), theta_2), [N,1,units])
                 # output += tf.reshape(tf.matmul(tf.reshape(mat_marg_2, [-1, K]), theta_3), [1,1,units])
-
 
                 output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
                 output.set_shape([N,M,units])#because of current tensorflow bug!!
@@ -118,14 +106,13 @@ def matrix_dense(
             return outdic
 
 
-
-        elif 'sparse' in mode:
+        elif 'sparse' in mode: 
             eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
-            mat = inputs.get('input', None)#N x M x K        
+            mat = inputs.get('input', None)#N x M x K
             mask = inputs.get('mask', None)#N x M
             output =  tf.convert_to_tensor(0, np.float32)
 
-            N,M,K = inputs['shape']
+            N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
 
             if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
                 norm_N = np.float32(N)
@@ -155,9 +142,7 @@ def matrix_dense(
                 # output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
                 # output.set_shape([N,M,units])#because of current tensorflow bug!!
                 
-
-
-                output = sparse_tensordot(mat, theta_0, [N*M, K], [N,M,units])
+                output = sparse_tensordot(mat, theta_0, [N*M, K], [N,M,units]) ## mat is sparse but output will be dense
                 # output += sparse_tensordot(mat_marg_0, theta_1, [-1,K], [1,M,units])
                 
                 output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
@@ -187,7 +172,7 @@ def matrix_dense(
                 mask = None
 
             ##....
-            output = dense_tensor_to_sparse(output, [N,M,units])
+            output = dense_tensor_to_sparse(output, [N,M,units]) ## converting output back to sparse, to be fed into pool or dropout layer. Maybe this doesnt make sense though
 
             outdic = {'input':output, 'mask':mask, 'shape':[N,M,units]}
             return outdic
@@ -230,32 +215,18 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
             inp = inputs['input']
             N,M,K = inputs['shape']
 
-            # if 'mean' in pool_mode or mask is not None:
-            #     op = tf.sparse_reduce_sum
-            # else:
-            #     # op = tf.reduce_max
-            #     print('\n--> ERROR - Currently max is not supported\n')
-            #     return
             if mask is None:
-                # nvec = op(inp, axis=1, keep_dims=True) / M
-                # mvec = op(inp, axis=0, keep_dims=True) / N
                 nvec = sparse_reduce(inp, mode=pool_mode, axis=1) / M
                 mvec = sparse_reduce(inp, mode=pool_mode, axis=0) / N
             else:
                 inp = sparse_tensor_mask_to_sparse(inp, mask, shape=[N,M,K])
-
-                # norm_0 = tf.sparse_reduce_sum(mask, axis=0, keep_dims=True) + eps
-                # norm_1 = tf.sparse_reduce_sum(mask, axis=1, keep_dims=True) + eps
-                # nvec = tf.sparse_reduce_sum(inp, axis=1, keep_dims=True)/norm_1
-                # mvec = tf.sparse_reduce_sum(inp, axis=0, keep_dims=True)/norm_0
-
                 norm_0 = sparse_reduce(mask, mode='sum', axis=0, shape=[N,M,1]) + eps
                 norm_1 = sparse_reduce(mask, mode='sum', axis=1, shape=[N,M,1]) + eps
                 nvec = sparse_reduce(inp, mode='sum', axis=1, shape=[N,M,K]) / norm_1
                 mvec = sparse_reduce(inp, mode='sum', axis=0, shape=[N,M,K]) / norm_0
 
             ##....
-            nvec = dense_tensor_to_sparse(nvec, [N,1,K])
+            nvec = dense_tensor_to_sparse(nvec, [N,1,K]) # Maybe these should just stay dense 
             mvec = dense_tensor_to_sparse(mvec, [1,M,K])
 
             outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'shape':[N,M,K]}
@@ -287,14 +258,13 @@ def matrix_dropout(inputs,#dropout along both axes
         N,M,K = inputs['shape']
 
         ##....
-        inp = sparse_tensor_to_dense(inp, [N,M,K])
+        inp = sparse_tensor_to_dense(inp, [N,M,K]) ## Currently converting to dense and back, since sparse_dropout eats too much memory 
         out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
         out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)
         ##....
         out = dense_tensor_to_sparse(out, [N,M,K])
 
-
-        # out = sparse_dropout(inp, rate=rate, training=is_training, shape=[N,M,K])
+        # out = sparse_dropout(inp, rate=rate, training=is_training, shape=[N,M,K]) ## Eating too much memory 
 
 
         outdic = {'input':out, 'mask':mask, 'shape':[N,M,K]}

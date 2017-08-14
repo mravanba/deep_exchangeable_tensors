@@ -52,7 +52,7 @@ def rec_loss_fn_sp(mat_sp, mask_sp, rec_sp, shape=None):
     return tf.sparse_reduce_sum(masked_diffs) / tf.sparse_reduce_sum(mask_sp)
 
 
-def sparse_placeholders(num_features): ##name=....
+def sparse_placeholders(num_features=3): ##name=....
     inds = tf.placeholder(tf.int64, shape=[None, num_features], name='inds')
     vals = tf.placeholder(tf.float32, shape=[None], name='vals')
     shape = tf.placeholder(tf.int64, shape=[num_features], name='shape')
@@ -156,25 +156,25 @@ def main(opts):
             # mask_tr_val = tf.sparse_placeholder(tf.float32, shape=tf.cast([N, M, 1], tf.int64), name='mask_tr_val')
 
             ## Sparse placeholders 
-            mat_inds, mat_vals, mat_shape = sparse_placeholders(3)
+            mat_inds, mat_vals, mat_shape = sparse_placeholders()
             mat = tf.SparseTensorValue(mat_inds, mat_vals, mat_shape)
 
-            mask_tr_inds, mask_tr_vals, mask_tr_shape = sparse_placeholders(3)
+            mask_tr_inds, mask_tr_vals, mask_tr_shape = sparse_placeholders()
             mask_tr = tf.SparseTensorValue(mask_tr_inds, mask_tr_vals, mask_tr_shape)
 
-            mat_val_inds, mat_val_vals, mat_val_shape = sparse_placeholders(3)
+            mat_val_inds, mat_val_vals, mat_val_shape = sparse_placeholders()
             mat_val = tf.SparseTensorValue(mat_val_inds, mat_val_vals, mat_val_shape)
 
-            mask_val_inds, mask_val_vals, mask_val_shape = sparse_placeholders(3)
+            mask_val_inds, mask_val_vals, mask_val_shape = sparse_placeholders()
             mask_val = tf.SparseTensorValue(mask_val_inds, mask_val_vals, mask_val_shape)
 
-            mask_tr_val_inds, mask_tr_val_vals, mask_tr_val_shape = sparse_placeholders(3)
+            mask_tr_val_inds, mask_tr_val_vals, mask_tr_val_shape = sparse_placeholders()
             mask_tr_val = tf.SparseTensorValue(mask_tr_val_inds, mask_tr_val_vals, mask_tr_val_shape)
 
             with tf.variable_scope("encoder"):
                 tr_dict = {'input':mat,
                            'mask':mask_tr,
-                           'shape':[N,M,num_features]}
+                           'shape':[N,M,num_features]} ## Passing in shape to be used in sparse functions 
                 val_dict = {'input':mat_val,
                             'mask':mask_tr_val,
                             'shape':[N,M,num_features]}
@@ -187,7 +187,7 @@ def main(opts):
                 tr_dict = {'nvec':out_enc_tr['nvec'],
                            'mvec':out_enc_tr['mvec'],
                            'mask':out_enc_tr['mask'],
-                           'shape':[N,M,out_enc_tr['shape'][2]]}
+                           'shape':[N,M,out_enc_tr['shape'][2]]} ## Passing in shape to be used in sparse functions 
                 val_dict = {'nvec':out_enc_val['nvec'],
                             'mvec':out_enc_val['mvec'],
                             'mask':out_enc_val['mask'],
@@ -212,8 +212,7 @@ def main(opts):
             for ep in range(opts['epochs']):
                 begin = time.time()
                 loss_tr_, rec_loss_tr_, loss_val_ = 0,0,0
-                for sample_ in tqdm(sample_submatrix_sp(data['mask_tr_sp'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
-
+                for sample_ in tqdm(sample_submatrix_sp(data['mask_tr_sp'], maxN, maxM), total=iters_per_epoch):#go over mini-batches                
                     tr_dict = {mat_inds:data['mat_sp']['indices'][sample_],
                                     mat_vals:data['mat_sp']['values'][sample_], 
                                     mat_shape:data['mat_sp']['dense_shape'], 
@@ -221,14 +220,14 @@ def main(opts):
                                     mask_tr_vals:data['mask_tr_sp']['values'][sample_], 
                                     mask_tr_shape:data['mask_tr_sp']['dense_shape']}
                     
-                    # _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
+                    _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
-                    ##......
-                    out_tr = sparse_tensor_to_dense(out_tr, [N,M,1])
-                    _, bloss_, brec_loss_, bout_tr = sess.run([train_step, total_loss, rec_loss, out_tr], feed_dict=tr_dict)
-                    out_tr = dense_tensor_to_sparse(out_tr, [N,M,1])
-                    print('min --> ', np.min(bout_tr))
-                    print('max --> ', np.max(bout_tr)) 
+                    # ##......
+                    # out_tr = sparse_tensor_to_dense(out_tr, [N,M,1])
+                    # _, bloss_, brec_loss_, bout_tr = sess.run([train_step, total_loss, rec_loss, out_tr], feed_dict=tr_dict)
+                    # out_tr = dense_tensor_to_sparse(out_tr, [N,M,1])
+                    # print('min --> ', np.min(bout_tr))
+                    # print('max --> ', np.max(bout_tr)) 
                     
 
                     loss_tr_ += np.sqrt(bloss_)
@@ -263,7 +262,7 @@ if __name__ == "__main__":
            'maxM':1682,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'mode':'dense', # use sparse or dense tensor representation
+           'mode':'sparse', # use sparse or dense tensor representation
            'encoder':[
                {'type':'matrix_dense', 'units':32},
                {'type':'matrix_dropout'},
