@@ -55,15 +55,17 @@ def rec_loss_fn_sp(mat_sp, mask_sp, rec_sp, shape=None):
 def sparse_placeholders(num_features=3): ##name=....
     inds = tf.placeholder(tf.int64, shape=[None, num_features], name='inds')
     vals = tf.placeholder(tf.float32, shape=[None], name='vals')
-    shape = tf.placeholder(tf.int64, shape=[num_features], name='shape')
-    return inds, vals, shape
+    # shape = tf.placeholder(tf.int64, shape=[num_features], name='shape')
+    # return inds, vals, shape
+    return inds, vals
 
 
 def main(opts):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-    # data = get_data('movielens-TEST', mode=opts['mode'], train=.8, valid=.2, test=.001)
-    data = get_data('movielens-100k', mode=opts['mode'], train=.8, valid=.2, test=.001)
-    # data = get_data('movielens-1M', mode=opts['mode'], train=.8, valid=.2, test=.001)
+    # path = 'movielens-TEST'
+    path = 'movielens-100k'
+    # path = 'movielens-1M'
+    data = get_data(path, mode=opts['mode'], train=.8, valid=.2, test=.001)    
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat'].shape
@@ -73,6 +75,18 @@ def main(opts):
 
     if N < maxN: maxN = N
     if M < maxM: maxM = M
+
+    if opts['verbose'] > 0:
+        print('\nRun Settings:')
+        print('mode: ', mode)
+        print('dataset: ', path)
+        print('drop mask: ', opts['defaults']['matrix_dense']['drop_mask'])
+        print('Exchangable layer pool mode: ', opts['defaults']['matrix_dense']['pool_mode'])
+        print('Pooling layer pool mode: ', opts['defaults']['matrix_pool']['pool_mode'])
+        print('dense channels: ', opts['encoder'][0]['units'])
+        # print('latent features: ', opts['encoder'][4]['units']) ##*** 
+        print('')
+        
 
     with tf.Graph().as_default():
 
@@ -121,6 +135,9 @@ def main(opts):
 
             iters_per_epoch = N//maxN * M//maxM # a bad heuristic: the whole matrix is in expectation covered in each epoch
             
+            min_loss = 5
+            min_loss_epoch = 0
+
             for ep in range(opts['epochs']):
                 begin = time.time()
                 loss_tr_, rec_loss_tr_, loss_val_ = 0,0,0
@@ -144,37 +161,35 @@ def main(opts):
             
                 bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
                 loss_val_ += np.sqrt(bloss_)
-                print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_), flush=True)
+                if loss_val_ < min_loss:
+                    min_loss = loss_val_
+                    min_loss_epoch = ep
+                print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch), flush=True)
 
 
 
         elif 'sparse' in mode:
-            # mat = tf.sparse_placeholder(tf.float32, shape=tf.cast([maxN, maxM, num_features], tf.int64), name='mat') ## Using sparse_placeholder is a problem because of a bug in setting the shape 
-            # mask_tr = tf.sparse_placeholder(tf.float32, shape=tf.cast([maxN, maxM, 1], tf.int64), name='mask_tr')
-            # mat_val = tf.sparse_placeholder(tf.float32, shape=tf.cast([N, M, num_features], tf.int64), name='mat_val')
-            # mask_val = tf.sparse_placeholder(tf.float32, shape=tf.cast([N, M, 1], tf.int64), name='mask_val')
-            # mask_tr_val = tf.sparse_placeholder(tf.float32, shape=tf.cast([N, M, 1], tf.int64), name='mask_tr_val')
 
             ## Sparse placeholders 
-            mat_inds, mat_vals, mat_shape = sparse_placeholders()
-            mat = tf.SparseTensorValue(mat_inds, mat_vals, mat_shape)
+            mat_inds, mat_vals = sparse_placeholders()
+            mat = tf.SparseTensorValue(mat_inds, mat_vals, [N,M,num_features])
 
-            mask_tr_inds, mask_tr_vals, mask_tr_shape = sparse_placeholders()
-            mask_tr = tf.SparseTensorValue(mask_tr_inds, mask_tr_vals, mask_tr_shape)
+            mask_tr_inds, mask_tr_vals = sparse_placeholders()
+            mask_tr = tf.SparseTensorValue(mask_tr_inds, mask_tr_vals, [N,M,1])
 
-            mat_val_inds, mat_val_vals, mat_val_shape = sparse_placeholders()
-            mat_val = tf.SparseTensorValue(mat_val_inds, mat_val_vals, mat_val_shape)
+            mat_val_inds, mat_val_vals = sparse_placeholders()
+            mat_val = tf.SparseTensorValue(mat_val_inds, mat_val_vals, [N,M,num_features])
 
-            mask_val_inds, mask_val_vals, mask_val_shape = sparse_placeholders()
-            mask_val = tf.SparseTensorValue(mask_val_inds, mask_val_vals, mask_val_shape)
+            mask_val_inds, mask_val_vals = sparse_placeholders()
+            mask_val = tf.SparseTensorValue(mask_val_inds, mask_val_vals, [N,M,1])
 
-            mask_tr_val_inds, mask_tr_val_vals, mask_tr_val_shape = sparse_placeholders()
-            mask_tr_val = tf.SparseTensorValue(mask_tr_val_inds, mask_tr_val_vals, mask_tr_val_shape)
+            mask_tr_val_inds, mask_tr_val_vals = sparse_placeholders()
+            mask_tr_val = tf.SparseTensorValue(mask_tr_val_inds, mask_tr_val_vals, [N,M,1])
 
             with tf.variable_scope("encoder"):
                 tr_dict = {'input':mat,
                            'mask':mask_tr,
-                           'shape':[N,M,num_features]} ## Passing in shape to be used in sparse functions 
+                           'shape':[N,M,num_features]} ## Passing in shape to be used in sparse functions
                 val_dict = {'input':mat_val,
                             'mask':mask_tr_val,
                             'shape':[N,M,num_features]}
@@ -187,10 +202,12 @@ def main(opts):
                 tr_dict = {'nvec':out_enc_tr['nvec'],
                            'mvec':out_enc_tr['mvec'],
                            'mask':out_enc_tr['mask'],
+                           'sparse_indices':out_enc_tr['sparse_indices'],
                            'shape':[N,M,out_enc_tr['shape'][2]]} ## Passing in shape to be used in sparse functions 
                 val_dict = {'nvec':out_enc_val['nvec'],
                             'mvec':out_enc_val['mvec'],
                             'mask':out_enc_val['mask'],
+                            'sparse_indices':out_enc_val['sparse_indices'],
                             'shape':[N,M,out_enc_val['shape'][2]]}
 
                 decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], mode=mode, verbose=2)#define the decoder
@@ -208,17 +225,19 @@ def main(opts):
             sess.run(tf.global_variables_initializer())
 
             iters_per_epoch = N//maxN * M//maxM # a bad heuristic: the whole matrix is in expectation covered in each epoch
+
+            min_loss = 5
+            min_loss_epoch = 0
             
             for ep in range(opts['epochs']):
                 begin = time.time()
                 loss_tr_, rec_loss_tr_, loss_val_ = 0,0,0
                 for sample_ in tqdm(sample_submatrix_sp(data['mask_tr_sp'], maxN, maxM), total=iters_per_epoch):#go over mini-batches                
+
                     tr_dict = {mat_inds:data['mat_sp']['indices'][sample_],
                                     mat_vals:data['mat_sp']['values'][sample_], 
-                                    mat_shape:data['mat_sp']['dense_shape'], 
                                     mask_tr_inds:data['mask_tr_sp']['indices'][sample_], 
-                                    mask_tr_vals:data['mask_tr_sp']['values'][sample_], 
-                                    mask_tr_shape:data['mask_tr_sp']['dense_shape']}
+                                    mask_tr_vals:data['mask_tr_sp']['values'][sample_]}
                     
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -237,73 +256,99 @@ def main(opts):
                 rec_loss_tr_ /= iters_per_epoch
             
                 val_dict = {mat_val_inds:data['mat_sp']['indices'],
-                                mat_val_vals:data['mat_sp']['values'],
-                                mat_val_shape:data['mat_sp']['dense_shape'],
+                                mat_val_vals:data['mat_sp']['values'],                                
                                 mask_val_inds:data['mask_val_sp']['indices'],
                                 mask_val_vals:data['mask_val_sp']['values'],
-                                mask_val_shape:data['mask_val_sp']['dense_shape'],                                
                                 mask_tr_val_inds: data['mask_tr_sp']['indices'],
-                                mask_tr_val_vals: data['mask_tr_sp']['values'],
-                                mask_tr_val_shape: data['mask_tr_sp']['dense_shape']}
+                                mask_tr_val_vals: data['mask_tr_sp']['values']}
 
                 bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
                 loss_val_ += np.sqrt(bloss_)
-                print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_), flush=True)
+                if loss_val_ < min_loss:
+                    min_loss = loss_val_
+                    min_loss_epoch = ep
+                print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch), flush=True)
 
 
 
 if __name__ == "__main__":
-    
-    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
-           'ckpt_folder':'checkpoints/factorized_ae',
-           'model_name':'test_fac_ae',
-           'verbose':2,
-           'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':1682,#num movies per submatrix
-           'visualize':False,
-           'save':False,
-           'mode':'sparse', # use sparse or dense tensor representation
-           'encoder':[
-               {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
-               #{'type':'matrix_dense', 'units':32},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
-               {'type':'matrix_pool'},
-               ],
-            'decoder':[
-               {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
-               #{'type':'matrix_dense', 'units':32},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
-                {'type':'matrix_dense', 'units':1, 'activation':None},
-            ],
-            'defaults':{#default values for each layer type (see layer.py)
-                'matrix_dense':{
-                    'activation':tf.nn.tanh,
-                    'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
-                    'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
-                    'kernel_initializer': tf.random_normal_initializer(0, .01),
-                    'regularizer': tf.contrib.keras.regularizers.l2(.00001),
-                },
-                'dense':{#not used
-                    'activation':tf.nn.elu, ##Relu??                
-                    'kernel_initializer': tf.random_normal_initializer(0, .01),
-                    'regularizer': tf.contrib.keras.regularizers.l2(.00001),
-                },
-                'matrix_pool':{
-                    'pool_mode':'mean',
-                },
-                'matrix_dropout':{
-                    'rate':.5,
-                }
-            },
-           'lr':.001,
-    }
-    
-    main(opts)
+
+    # num_units = [16, 32, 64]
+    # num_latent_features = [5, 10, 15]
+    # dense_pool_modes = ['max', 'mean']
+    # pool_modes = ['max', 'mean']
+    # drop_mask = [True, False]
+
+    num_units = [32]
+    num_latent_features = [5]
+    dense_pool_modes = ['mean']
+    pool_modes = ['max']
+    drop_mask = [False]
+
+
+
+    for units in num_units:
+        for features in num_latent_features:
+            for dense_pool_mode in dense_pool_modes:
+                for pool_mode in pool_modes:
+                    for drop in drop_mask:
+        
+                        opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
+                               'ckpt_folder':'checkpoints/factorized_ae',
+                               'model_name':'test_fac_ae',
+                               'verbose':2,
+                               # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+                               # 'maxM':1682,#num movies per submatrix
+                               'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+                               'maxM':100,#num movies per submatrix
+                               'visualize':False,
+                               'save':False,
+                               'mode':'dense', # use sparse or dense tensor representation
+                               'encoder':[
+                                   # {'type':'matrix_dense', 'units':16},
+                                   # {'type':'matrix_dropout'},
+                                   # {'type':'matrix_dense', 'units':32},
+                                   # {'type':'matrix_dropout'},
+                                   {'type':'matrix_dense', 'units':32},
+                                   # {'type':'matrix_dropout'},
+                                   {'type':'matrix_dense', 'units':32},
+                                   # {'type':'matrix_dropout'},
+                                   {'type':'matrix_dense', 'units':features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+                                   {'type':'matrix_pool'},
+                                   ],
+                                'decoder':[
+                                   # {'type':'matrix_dense', 'units':16},
+                                   # {'type':'matrix_dropout'},
+                                   # {'type':'matrix_dense', 'units':32},
+                                   # {'type':'matrix_dropout'},
+                                   {'type':'matrix_dense', 'units':32},
+                                   # {'type':'matrix_dropout'},
+                                   {'type':'matrix_dense', 'units':32},
+                                   # {'type':'matrix_dropout'},
+                                   {'type':'matrix_dense', 'units':1, 'activation':None},
+                                ],
+                                'defaults':{#default values for each layer type (see layer.py)
+                                    'matrix_dense':{
+                                        'activation':tf.nn.tanh,
+                                        'drop_mask':drop,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
+                                        'pool_mode':dense_pool_mode,#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
+                                        'kernel_initializer': tf.random_normal_initializer(0, .01),
+                                        'regularizer': tf.contrib.keras.regularizers.l2(.00001),
+                                    },
+                                    'dense':{#not used
+                                        'activation':tf.nn.elu,
+                                        'kernel_initializer': tf.random_normal_initializer(0, .01),
+                                        'regularizer': tf.contrib.keras.regularizers.l2(.00001),
+                                    },
+                                    'matrix_pool':{
+                                        'pool_mode':pool_mode,
+                                    },
+                                    'matrix_dropout':{
+                                        'rate':.5,
+                                    }
+                                },
+                               'lr':.0001,
+                        }
+                        
+                        main(opts)
 
