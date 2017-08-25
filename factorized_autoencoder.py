@@ -258,34 +258,34 @@ if __name__ == "__main__":
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':1682,#num movies per submatrix
+           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'mode':'sparse', # use sparse or dense tensor representation
+           'mode':'dense', # use sparse or dense tensor representation
            'encoder':[
                {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
+               #{'type':'matrix_dropout'},
                #{'type':'matrix_dense', 'units':32},
                #{'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
+               #{'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
                {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
+               #{'type':'matrix_dropout'},
                #{'type':'matrix_dense', 'units':32},
                #{'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':32},
-               {'type':'matrix_dropout'},
+               #{'type':'matrix_dropout'},
                 {'type':'matrix_dense', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
                     'activation':tf.nn.tanh,
-                    'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
+                    'drop_mask':True,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),

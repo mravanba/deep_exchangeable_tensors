@@ -102,6 +102,8 @@ def matrix_dense(
                 output = kwargs.get('activation')(output)
             if kwargs.get('drop_mask', True):
                 mask = None
+            else:
+                output = mask * output
             outdic = {'input':output, 'mask':mask}
             return outdic
 
