@@ -86,7 +86,6 @@ def get_data(dataset='movielens-small',
         n_valid = n_test + n_ratings_valid
         mat = np.zeros((n_users, n_movies), dtype=np.float32)
         mat[ratings.user_id-1, movies] = ratings.rating
-        
 
         mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)        
         mask_valid = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -94,25 +93,35 @@ def get_data(dataset='movielens-small',
         mask_tr[ratings.user_id[:n_train]-1, movies[:n_train]] = 1
         mask_ts[ratings.user_id[n_train:n_test]-1, movies[n_train:n_test]] = 1
         mask_valid[ratings.user_id[n_test:n_valid]-1, movies[n_test:n_valid]] = 1
+        mask_tr_val = mask_tr + mask_valid
 
-        if 'dense' in mode:
-            data = {'mat':mat[:,:,None],
-                    'mask_tr':mask_tr[:,:,None],
-                    'mask_ts':mask_ts[:,:,None],
-                    'mask_val':mask_valid[:,:,None]}
-        elif 'sparse' in mode:
-            mat_sp = dense_array_to_sparse(mat, expand_dims=True)
-            mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
-            mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
-            mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+        # if 'dense' in mode:
+        #     data = {'mat':mat[:,:,None],
+        #             'mask_tr':mask_tr[:,:,None],
+        #             'mask_ts':mask_ts[:,:,None],
+        #             'mask_val':mask_valid[:,:,None],
+        #             'mask_tr_val':mask_tr_val[:,:,None]}
+        # elif 'sparse' in mode:
+        #     mat_sp = dense_array_to_sparse(mat, expand_dims=True)
+        #     mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
+        #     mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
+        #     mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+        #     mask_tr_val_sp = dense_array_to_sparse(mask_tr_val, expand_dims=True)
 
-            data = {'mat':mat[:,:,None],
-                    'mask_tr':mask_tr[:,:,None],
-                    'mask_val':mask_valid[:,:,None],
-                    'mask_ts':mask_ts[:,:,None],
-                    'mat_sp':mat_sp,
-                    'mask_tr_sp':mask_tr_sp,
-                    'mask_val_sp':mask_val_sp}
+        #     data = {'mat':mat[:,:,None],
+        #             'mask_tr':mask_tr[:,:,None],
+        #             'mask_val':mask_valid[:,:,None],
+        #             'mask_ts':mask_ts[:,:,None],
+        #             'mat_sp':mat_sp,
+        #             'mask_tr_sp':mask_tr_sp,
+        #             'mask_val_sp':mask_val_sp,
+        #             'mask_tr_val_sp':mask_tr_val_sp}
+
+        data = {'mat':mat[:,:,None],
+                'mask_tr':mask_tr[:,:,None],
+                'mask_ts':mask_ts[:,:,None],
+                'mask_val':mask_valid[:,:,None],
+                'mask_tr_val':mask_tr_val[:,:,None]}
         # pdb.set_trace()
         return data
 
@@ -143,25 +152,34 @@ def get_data(dataset='movielens-small',
         mask_tr[ratings.user_id[:n_train]-1, movies[:n_train]] = 1
         mask_ts[ratings.user_id[n_train:n_test]-1, movies[n_train:n_test]] = 1
         mask_valid[ratings.user_id[n_test:n_valid]-1, movies[n_test:n_valid]] = 1
+        mask_tr_val = mask_tr + mask_valid
         
-        if 'dense' in mode:
-            data = {'mat':mat[:,:,None],
-                    'mask_tr':mask_tr[:,:,None],
-                    'mask_ts':mask_ts[:,:,None],
-                    'mask_val':mask_valid[:,:,None]}
-        elif 'sparse' in mode:
-            mat_sp = dense_array_to_sparse(mat, expand_dims=True)
-            mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
-            mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
-            mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+        # if 'dense' in mode:
+        #     data = {'mat':mat[:,:,None],
+        #             'mask_tr':mask_tr[:,:,None],
+        #             'mask_ts':mask_ts[:,:,None],
+        #             'mask_val':mask_valid[:,:,None],
+        #             'mask_tr_val':mask_tr_val[:,:,None]}
+        # elif 'sparse' in mode:
+        #     mat_sp = dense_array_to_sparse(mat, expand_dims=True)
+        #     mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
+        #     mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
+        #     mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+        #     mask_tr_val_sp = dense_array_to_sparse(mask_tr_val, expand_dims=True)
 
-            data = {'mat':mat[:,:,None],
-                    'mask_tr':mask_tr[:,:,None],
-                    'mask_val':mask_valid[:,:,None],
-                    'mask_ts':mask_ts[:,:,None],
-                    'mat_sp':mat_sp,
-                    'mask_tr_sp':mask_tr_sp,
-                    'mask_val_sp':mask_val_sp}
+        #     data = {'mat':mat[:,:,None],
+        #             'mask_tr':mask_tr[:,:,None],
+        #             'mask_val':mask_valid[:,:,None],
+        #             'mask_ts':mask_ts[:,:,None],
+        #             'mat_sp':mat_sp,
+        #             'mask_tr_sp':mask_tr_sp,
+        #             'mask_val_sp':mask_val_sp,
+        #             'mask_tr_val_sp':mask_tr_val_sp}
+        data = {'mat':mat[:,:,None],
+                'mask_tr':mask_tr[:,:,None],
+                'mask_ts':mask_ts[:,:,None],
+                'mask_val':mask_valid[:,:,None],
+                'mask_tr_val':mask_tr_val[:,:,None]}
         # pdb.set_trace()
         return data   
         
@@ -170,9 +188,9 @@ def get_data(dataset='movielens-small',
         path = os.path.join(data_folder, 'ml-1m/ratings.dat')
 
         ratings = pd.read_csv(path, sep=':', names=r_cols, encoding='latin-1')
+        # ratings = pd.read_csv(path, sep='::', names=r_cols, encoding='latin-1', engine='python') # pandas treats '::' as a regex and uses 'python engine'. Does it matter? 
         r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
         ratings = ratings[r_cols]
-        # ratings = pd.read_csv(path, sep='::', names=r_cols, encoding='latin-1', engine='python') # pandas treats '::' as a regex and uses pytohn engine. Does it matter? 
 
         n_users = np.max(ratings.user_id)
         _, movies = np.unique(ratings.movie_id, return_inverse=True)
@@ -190,26 +208,35 @@ def get_data(dataset='movielens-small',
         mask_tr[ratings.user_id[rand_perm[:n_train]]-1, movies[rand_perm[:n_train]]] = 1
         mask_ts[ratings.user_id[rand_perm[n_train:n_test]]-1,movies[rand_perm[n_train:n_test]]] = 1
         mask_valid[ratings.user_id[rand_perm[n_test:n_valid]]-1,movies[rand_perm[n_test:n_valid]]] = 1
+        mask_tr_val = mask_tr + mask_valid
         
-        # data = {'mat':mat[:,:,None], 'mask_tr':mask_tr[:,:,None], 'mask_ts':mask_ts[:,:,None], 'mask_val':mask_valid[:,:,None]}
-        if 'dense' in mode:
-            data = {'mat':mat[:,:,None],
-                    'mask_tr':mask_tr[:,:,None],
-                    'mask_ts':mask_ts[:,:,None],
-                    'mask_val':mask_valid[:,:,None]}
-        elif 'sparse' in mode:
-            mat_sp = dense_array_to_sparse(mat, expand_dims=True)
-            mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
-            mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
-            mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+        # if 'dense' in mode:
+        #     data = {'mat':mat[:,:,None],
+        #             'mask_tr':mask_tr[:,:,None],
+        #             'mask_ts':mask_ts[:,:,None],
+        #             'mask_val':mask_valid[:,:,None],
+        #             'mask_tr_val':mask_tr_val[:,:,None]}
+        # elif 'sparse' in mode:
+        #     mat_sp = dense_array_to_sparse(mat, expand_dims=True)
+        #     mask_tr_sp = dense_array_to_sparse(mask_tr, expand_dims=True)
+        #     mask_val_sp = dense_array_to_sparse(mask_valid, expand_dims=True)
+        #     mask_ts_sp = dense_array_to_sparse(mask_ts, expand_dims=True)
+        #     mask_tr_val_sp = dense_array_to_sparse(mask_tr_val, expand_dims=True)
 
-            data = {'mat':mat[:,:,None],
+        #     data = {'mat':mat[:,:,None],
+        #             'mask_tr':mask_tr[:,:,None],
+        #             'mask_val':mask_valid[:,:,None],
+        #             'mask_ts':mask_ts[:,:,None],
+        #             'mat_sp':mat_sp,
+        #             'mask_tr_sp':mask_tr_sp,
+        #             'mask_val_sp':mask_val_sp,
+        #             'mask_tr_val_sp':mask_tr_val_sp}
+
+        data = {'mat':mat[:,:,None],
                     'mask_tr':mask_tr[:,:,None],
-                    'mask_val':mask_valid[:,:,None],
                     'mask_ts':mask_ts[:,:,None],
-                    'mat_sp':mat_sp,
-                    'mask_tr_sp':mask_tr_sp,
-                    'mask_val_sp':mask_val_sp}
+                    'mask_val':mask_valid[:,:,None],
+                    'mask_tr_val':mask_tr_val[:,:,None]}
 
         # pdb.set_trace()
         return data

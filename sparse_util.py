@@ -3,7 +3,7 @@ import tensorflow as tf
 import math
 
 
-## Just used to get sparse representation of input data
+## Used to get sparse representation of input data
 def dense_array_to_sparse(x, expand_dims=False):
     if expand_dims: 
         x = np.expand_dims(x, 2)
@@ -22,36 +22,77 @@ def sparse_array_to_dense(x_sp, shape=None):
     return out
 
 
-def dense_tensor_to_sparse(x, shape=None):
+# def dense_tensor_to_sparse(x, shape=None):
+#     if shape is None:
+#         shape = x.shape
+#     inds = tf.where(tf.not_equal(x, 0))
+#     vals = tf.gather_nd(x, inds)    
+#     return tf.SparseTensorValue(inds, vals, shape)
+
+def dense_tensor_to_sparse(x, sparse_indices=None, shape=None):
     if shape is None:
         shape = x.shape
-    inds = tf.where(tf.not_equal(x, 0))
-    vals = tf.gather_nd(x, inds)    
+    K = shape[2]        
+    if sparse_indices is None:
+        inds = tf.where(tf.not_equal(x, 0))
+    else:
+        num_vals = tf.shape(sparse_indices)[0]
+        inds_exp = tf.reshape(tf.tile(tf.range(K, dtype=tf.int64), multiples=[num_vals]), shape=[-1, 1]) # expand dimension of mask indices
+        inds = tf.tile(sparse_indices, multiples=[K,1]) # duplicate sparse_indices K times
+        inds = tf.reshape(inds, shape=[K, num_vals, 2])
+        inds = tf.reshape(tf.transpose(inds, perm=[1,0,2]), shape=[-1,2])
+        inds = tf.concat((inds, inds_exp), axis=1)
+    vals = tf.gather_nd(x, inds)
     return tf.SparseTensorValue(inds, vals, shape)
 
 
 def sparse_tensor_to_dense(x_sp, shape=None):
     if shape is None:
         shape = x_sp.dense_shape
-    return tf.scatter_nd(x_sp.indices, x_sp.values, x_sp.dense_shape)
+    return tf.scatter_nd(x_sp.indices, x_sp.values, shape)
     # return tf.sparse_tensor_to_dense(x_sp)
 
 
+# ## This function works, but it calls sparse_tensor_to_dense, which could be inefficient 
+# def sparse_tensor_mask_to_sparse(x_sp, mask_sp, sparse_indices=None, shape=None, name=None):
+#     if shape is None:
+#         shape = x_sp.dense_shape
+#     if sparse_indices is None:
+#         inds = tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2])
+#     else:
+#         inds = sparse_indices
+#     K = shape[2]
+#     num_vals = tf.shape(mask_sp.indices)[0]
+#     inds_exp = tf.reshape(tf.range(K, dtype=tf.int64), [-1, 1])
+#     inds_exp = tf.reshape(tf.tile(inds_exp, tf.stack([1, num_vals])), [-1,1])
+#     inds = tf.tile(inds, multiples=[K,1])
+#     inds = tf.concat((inds, inds_exp), axis=1)
+
+#     x = sparse_tensor_to_dense(x_sp, shape=shape)
+    
+#     vals = tf.reshape(tf.gather_nd(x, inds), [-1])    
+
+#     return tf.SparseTensorValue(inds, vals, shape)
+
 ## This function works, but it calls sparse_tensor_to_dense, which could be inefficient 
-def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
+def sparse_tensor_mask_to_sparse(x_sp, mask_sp, sparse_indices=None, shape=None):
     if shape is None:
         shape = x_sp.dense_shape
+    if sparse_indices is None:
+        inds = tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2])
+        num_vals = tf.shape(mask_sp.indices)[0]
+    else:
+        inds = sparse_indices
+        num_vals = tf.shape(sparse_indices)[0]
     K = shape[2]
-    num_vals = tf.shape(mask_sp.indices)[0]
+    
     inds_exp = tf.reshape(tf.range(K, dtype=tf.int64), [-1, 1])
     inds_exp = tf.reshape(tf.tile(inds_exp, tf.stack([1, num_vals])), [-1,1])
-
-    x = sparse_tensor_to_dense(x_sp, shape=shape)
-
-    inds = tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2])
-
     inds = tf.tile(inds, multiples=[K,1])
     inds = tf.concat((inds, inds_exp), axis=1)
+
+    x = sparse_tensor_to_dense(x_sp, shape=shape)
+    
     vals = tf.reshape(tf.gather_nd(x, inds), [-1])    
 
     return tf.SparseTensorValue(inds, vals, shape)
@@ -63,15 +104,65 @@ def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
 #     K = shape[2]
 #     num_vals = tf.shape(mask_sp.indices)[0]
 
-#     inds_exp = tf.reshape(tf.tile(tf.range(K, dtype=tf.int64), multiples=tf.stack([num_vals])), [-1,1])
-#     inds = tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2])    
-#     inds = tf.reshape(tf.tile(inds, [1,K]), [-1,2])
+#     mask_inds = mask_sp.indices[:,0:2]
+#     x_inds = x_sp.indices[0::2,0:2]
+
+#     select = tf.cast(tf.equal(mask_inds, tf.expand_dims(x_inds, axis=1)), dtype=tf.int32)
+#     select = tf.reduce_sum(tf.reduce_prod(select, axis=2), axis=1)
+#     # select = tf.cast(select, dtype=tf.bool)
+#     # vals = tf.boolean_mask(tf.reshape(x_sp.values, shape=[-1,2]), select)
+#     vals = tf.dynamic_partition(x_sp.values, partitions=select, num_partitions=2)[1]
+
+#     vals = tf.reshape(vals, shape=[-1])
+
+#     inds_exp = tf.reshape(tf.tile(tf.range(K, dtype=tf.int64), multiples=[num_vals]), shape=[-1, 1]) # expand dimension of mask indices
+#     inds = tf.tile(tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2]), multiples=[K,1]) # duplicate mask indices K times
+#     inds = tf.reshape(inds, shape=[K, num_vals, 2])
+#     inds = tf.reshape(tf.transpose(inds, perm=[1,0,2]), shape=[-1,2])
+#     inds = tf.concat((inds, inds_exp), axis=1)
+  
+#     return tf.SparseTensorValue(inds, vals, shape)
+
+
+
+# def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
+#     if shape is None:
+#         shape = x_sp.dense_shape
+#     K = shape[2]
+#     num_vals = tf.shape(mask_sp.indices)[0]
+
+#     inds_exp = tf.reshape(tf.tile(tf.range(K, dtype=tf.int64), multiples=[num_vals]), shape=[-1, 1]) # expand dimension of mask indices
+
+#     inds = tf.tile(tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2]), multiples=[K,1]) # duplicate mask indices K times
+#     inds = tf.reshape(inds, shape=[K, num_vals, 2])
+#     inds = tf.reshape(tf.transpose(inds, perm=[1,0,2]), shape=[-1,2])
 #     inds = tf.concat((inds, inds_exp), axis=1)
 
-#     select = tf.cast(tf.equal(x_sp.indices, tf.expand_dims(inds, axis=1)), dtype=tf.int32)
+#     select = tf.cast(tf.equal(x_sp.indices, tf.expand_dims(inds, axis=1)), dtype=tf.int32) # mask for choosing values of x_sp
 #     # select = tf.cast(tf.reduce_sum(tf.reduce_prod(select, axis=2), axis=0), dtype=tf.bool)
-#     # vals = tf.boolean_mask(x_sp.values, select) ## Causes memory problems because tf converts indexed slices to a dense tensor
+#     # vals = tf.boolean_mask(x_sp.values, select)
+
 #     select = tf.reduce_sum(tf.reduce_prod(select, axis=2), axis=0)
+#     vals = tf.dynamic_partition(x_sp.values, partitions=select, num_partitions=2)[1]
+
+#     return tf.SparseTensorValue(inds, vals, shape)
+
+
+# def sparse_tensor_mask_to_sparse(x_sp, mask_sp, shape=None, name=None):
+#     if shape is None:
+#         shape = x_sp.dense_shape
+#     K = shape[2]
+#     num_vals = tf.shape(mask_sp.indices)[0]
+#     inds_exp = tf.reshape(tf.range(K, dtype=tf.int64), [-1, 1])
+#     inds_exp = tf.reshape(tf.tile(inds_exp, tf.stack([1, num_vals])), [-1,1])
+
+#     inds = tf.slice(mask_sp.indices, begin=[0,0], size=[-1,2])
+#     inds = tf.tile(inds, multiples=[K,1])
+#     inds = tf.concat((inds, inds_exp), axis=1)
+
+#     select = tf.cast(tf.equal(x_sp.indices, tf.expand_dims(inds, axis=1)), dtype=tf.int32) # mask for choosing values of x_sp
+#     select = tf.reduce_sum(tf.reduce_prod(select, axis=2), axis=0)
+
 #     vals = tf.dynamic_partition(x_sp.values, partitions=select, num_partitions=2)[1]
 
 #     return tf.SparseTensorValue(inds, vals, shape)
@@ -109,14 +200,16 @@ def sparse_tensordot(tensor_sp, param, in_shape, out_shape):
 
 
 ## Like tf.tensordot but with sparse inputs and outputs. Output has non-zero value only where input has non-zero value 
-def sparse_tensordot_sparse(tensor_sp, param, in_shape, units):
+def sparse_tensordot_sparse(tensor_sp, param, in_shape, units, sparse_indices=None):
     N,M,K = in_shape
     num_vals = tf.shape(tensor_sp.indices)[0]
     num_unique = tf.cast(tf.divide(num_vals, K), dtype=tf.int32)
-    
-    ## use numpy? 
-    inds_exp = tf.reshape(tf.tile(tf.range(units, dtype=tf.int64), multiples=tf.stack([num_unique])), [-1,1])
-    inds = tf.strided_slice(tensor_sp.indices, begin=[0,0], end=[num_vals, 2], strides=[K,1])
+    if sparse_indices is None:
+        inds = tf.strided_slice(tensor_sp.indices, begin=[0,0], end=[num_vals, 2], strides=[K,1])
+    else:
+        inds = sparse_indices    
+
+    inds_exp = tf.reshape(tf.tile(tf.range(units, dtype=tf.int64), multiples=tf.stack([num_unique])), [-1,1])    
     inds = tf.reshape(tf.tile(inds, [1,units]), [-1,2])
     inds = tf.concat((inds, inds_exp), axis=1)
 
