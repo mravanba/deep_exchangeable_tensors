@@ -278,7 +278,8 @@ def main(opts):
                                     mat_vals:mat_sp['values'], 
                                     mask_tr_inds:mask_tr_sp['indices'],
                                     mask_tr_vals:mask_tr_sp['values'], 
-                                    sparse_indices_tr:mask_tr_sp['indices'][:,0:2]}
+                                    sparse_indices_tr:mask_tr_sp['indices'][:,0:2],
+                                    mask_meta_indices_tr:data['mask_meta_indices_tr']}
 
                     
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -307,9 +308,11 @@ def main(opts):
                                 mask_val_inds:mask_val_sp['indices'],
                                 mask_val_vals:mask_val_sp['values'],
                                 sparse_indices_val:mask_val_sp['indices'][:,0:2],
+                                mask_meta_indices_val:data['mask_meta_indices_val'],
                                 mask_tr_val_inds:mask_tr_val_sp['indices'],
                                 mask_tr_val_vals:mask_tr_val_sp['values'],
-                                sparse_indices_tr_val:mask_tr_val_sp['indices'][:,0:2]}
+                                sparse_indices_tr_val:mask_tr_val_sp['indices'][:,0:2],
+                                mask_meta_indices_tr_val:data['mask_meta_indices_tr_val'],}
 
 
                 bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)

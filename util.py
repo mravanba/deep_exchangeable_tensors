@@ -153,6 +153,12 @@ def get_data(dataset='movielens-small',
         mask_ts[ratings.user_id[n_train:n_test]-1, movies[n_train:n_test]] = 1
         mask_valid[ratings.user_id[n_test:n_valid]-1, movies[n_test:n_valid]] = 1
         mask_tr_val = mask_tr + mask_valid
+
+
+        mask_tr_meta_inds = np.reshape(mask_tr[mat.nonzero()].nonzero(), newshape=[-1])
+        mask_ts_meta_inds = np.reshape(mask_ts[mat.nonzero()].nonzero(), newshape=[-1])
+        mask_val_meta_inds = np.reshape(mask_valid[mat.nonzero()].nonzero(), newshape=[-1])
+        mask_tr_val_meta_inds = np.reshape(mask_tr_val[mat.nonzero()].nonzero(), newshape=[-1])
         
         # if 'dense' in mode:
         #     data = {'mat':mat[:,:,None],
@@ -179,7 +185,11 @@ def get_data(dataset='movielens-small',
                 'mask_tr':mask_tr[:,:,None],
                 'mask_ts':mask_ts[:,:,None],
                 'mask_val':mask_valid[:,:,None],
-                'mask_tr_val':mask_tr_val[:,:,None]}
+                'mask_tr_val':mask_tr_val[:,:,None],
+                'mask_meta_indices_tr':mask_tr_meta_inds,
+                'mask_meta_indices_ts':mask_ts_meta_inds,
+                'mask_meta_indices_val':mask_val_meta_inds,
+                'mask_meta_indices_tr_val':mask_tr_val_meta_inds}
         # pdb.set_trace()
         return data   
         

@@ -71,11 +71,11 @@ def sparse_tensor_mask_to_sparse(x_sp, mask_sp, mask_meta_indices, sparse_indice
     inds = tf.tile(inds, multiples=[K,1])
     inds = tf.concat((inds, inds_exp), axis=1)
 
-    vals = tf.gather(tf.reshape(x_sp.values, shape=[-1,K]), mask_meta_indices)
-    vals = tf.reshape(vals, shape=[-1])
+    # vals = tf.gather(tf.reshape(x_sp.values, shape=[-1,K]), mask_meta_indices)
+    # vals = tf.reshape(vals, shape=[-1])
 
-    # x = sparse_tensor_to_dense(x_sp, shape=shape)
-    # vals = tf.reshape(tf.gather_nd(x, inds), [-1])
+    x = sparse_tensor_to_dense(x_sp, shape=shape)
+    vals = tf.reshape(tf.gather_nd(x, inds), [-1])
 
     
     
