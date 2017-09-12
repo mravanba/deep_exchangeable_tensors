@@ -111,6 +111,7 @@ def matrix_dense(
             mat = inputs.get('input', None)#N x M x K
             mask = inputs.get('mask', None)#N x M
             sparse_indices = inputs.get('sparse_indices', None)
+            mask_meta_indices = inputs.get('mask_meta_indices', None)
 
             N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
             output =  tf.convert_to_tensor(0, np.float32)
@@ -123,7 +124,8 @@ def matrix_dense(
 
                 if mask is not None:
 
-                    mat = sparse_tensor_mask_to_sparse(mat, mask, sparse_indices=sparse_indices, shape=[N,M,K])
+                    # mat = sparse_tensor_mask_to_sparse(mat, mask, mask_meta_indices, sparse_indices=sparse_indices, shape=[N,M,K])
+                    mat = sparse_tensor_mask_to_sparse(mat, mask, mask_meta_indices, sparse_indices=None, shape=[N,M,K])
 
                     norm_N = sparse_reduce(mask, mode='sum', axis=0, shape=[N,M,1]) + eps
                     norm_M = sparse_reduce(mask, mode='sum', axis=1, shape=[N,M,1]) + eps
@@ -197,11 +199,12 @@ def matrix_dense(
 
                     ##....
                     output = dense_tensor_to_sparse(output, sparse_indices=sparse_indices, shape=[N,M,units])
+                    # output = dense_tensor_to_sparse(output, sparse_indices=None, shape=[N,M,units])
                 
             if kwargs.get('drop_mask', True):
                 mask = None
 
-            outdic = {'input':output, 'mask':mask, 'sparse_indices':sparse_indices, 'shape':[N,M,units]}
+            outdic = {'input':output, 'mask':mask, 'sparse_indices':sparse_indices, 'mask_meta_indices':mask_meta_indices, 'shape':[N,M,units]}
             return outdic
 
 
@@ -242,6 +245,7 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
             inp = inputs['input']
             N,M,K = inputs['shape']
             sparse_indices = inputs['sparse_indices']
+            mask_meta_indices = inputs['mask_meta_indices']
 
             if mask is None:
                 nvec = sparse_reduce(inp, mode=pool_mode, axis=1) / M
@@ -255,14 +259,15 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
                 # mask = dense_tensor_to_sparse(mask, shape=[N,M,1])
 
 
-                inp = sparse_tensor_mask_to_sparse(inp, mask, sparse_indices=sparse_indices, shape=[N,M,K])
+                # inp = sparse_tensor_mask_to_sparse(inp, mask, mask_meta_indices, sparse_indices=sparse_indices, shape=[N,M,K])
+                inp = sparse_tensor_mask_to_sparse(inp, mask, mask_meta_indices, sparse_indices=None, shape=[N,M,K])
 
                 norm_0 = sparse_reduce(mask, mode='sum', axis=0, shape=[N,M,1]) + eps
                 norm_1 = sparse_reduce(mask, mode='sum', axis=1, shape=[N,M,1]) + eps
                 nvec = sparse_reduce(inp, mode='sum', axis=1, shape=[N,M,K]) / norm_1
                 mvec = sparse_reduce(inp, mode='sum', axis=0, shape=[N,M,K]) / norm_0
 
-            outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'sparse_indices':sparse_indices, 'shape':[N,M,K]}
+            outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'sparse_indices':sparse_indices, 'mask_meta_indices':mask_meta_indices, 'shape':[N,M,K]}
             return outdic
                 
 
@@ -300,7 +305,7 @@ def matrix_dropout(inputs,#dropout along both axes
         # out = sparse_dropout(inp, rate=rate, training=is_training, shape=[N,M,K]) ## Eating too much memory 
 
 
-        outdic = {'input':out, 'mask':mask, 'sparse_indices':inputs['sparse_indices'], 'shape':[N,M,K]}
+        outdic = {'input':out, 'mask':mask, 'sparse_indices':inputs['sparse_indices'], 'mask_meta_indices':inputs['mask_meta_indices'], 'shape':[N,M,K]}
 
         return outdic
 

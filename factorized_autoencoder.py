@@ -46,12 +46,12 @@ def rec_loss_fn(mat, mask, rec):
     return ((tf.reduce_sum(((mat - rec)**2)*mask))/tf.reduce_sum(mask))#average l2-error over non-zero entries
 
 
-def rec_loss_fn_sp(mat_sp, mask_sp, rec_sp, sparse_indices=None, shape=None):
+def rec_loss_fn_sp(mat_sp, mask_sp, mask_meta_indices, rec_sp, sparse_indices=None, shape=None):
     if shape is None:
         shape = mat_sp.dense_shape
     rec_sp = tf.SparseTensorValue(rec_sp.indices, tf.negative(rec_sp.values), rec_sp.dense_shape)
     sq_diffs = tf.square(tf.sparse_add(mat_sp, rec_sp))
-    masked_diffs = sparse_tensor_mask_to_sparse(sq_diffs, mask_sp, sparse_indices=sparse_indices, shape=shape)
+    masked_diffs = sparse_tensor_mask_to_sparse(sq_diffs, mask_sp, mask_meta_indices, sparse_indices=sparse_indices, shape=shape)
     return tf.sparse_reduce_sum(masked_diffs) / tf.sparse_reduce_sum(mask_sp)
 
 
@@ -184,6 +184,7 @@ def main(opts):
 
             mask_tr_inds, mask_tr_vals = sparse_placeholders()
             mask_tr = tf.SparseTensorValue(mask_tr_inds, mask_tr_vals, [maxN,maxM,1])
+            mask_meta_indices_tr = tf.placeholder(tf.int64, shape=[None], name='mask_meta_indices_tr')
 
             sparse_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='sparse_indices_tr')
 
@@ -192,11 +193,13 @@ def main(opts):
 
             mask_val_inds, mask_val_vals = sparse_placeholders()
             mask_val = tf.SparseTensorValue(mask_val_inds, mask_val_vals, [N,M,1])
+            mask_meta_indices_val = tf.placeholder(tf.int64, shape=[None], name='mask_meta_indices_val')
 
             sparse_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='sparse_indices_val')
 
             mask_tr_val_inds, mask_tr_val_vals = sparse_placeholders()
             mask_tr_val = tf.SparseTensorValue(mask_tr_val_inds, mask_tr_val_vals, [N,M,1])
+            mask_meta_indices_tr_val = tf.placeholder(tf.int64, shape=[None], name='mask_meta_indices_tr_val')
 
             sparse_indices_tr_val = tf.placeholder(tf.int64, shape=[None, 2], name='sparse_indices_tr_val')
 
@@ -204,10 +207,12 @@ def main(opts):
                 tr_dict = {'input':mat,
                            'mask':mask_tr,
                            'sparse_indices':sparse_indices_tr,
+                           'mask_meta_indices':mask_meta_indices_tr,
                            'shape':[maxN,maxM,num_features]} ## Passing in shape to be used in sparse functions
                 val_dict = {'input':mat_val,
                             'mask':mask_tr_val,
                             'sparse_indices':sparse_indices_tr_val,
+                            'mask_meta_indices':mask_meta_indices_tr_val,
                             'shape':[N,M,num_features]}
 
                 encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], mode=mode, verbose=2) #define the encoder
@@ -219,11 +224,13 @@ def main(opts):
                            'mvec':out_enc_tr['mvec'],
                            'mask':out_enc_tr['mask'],
                            'sparse_indices':out_enc_tr['sparse_indices'],
+                           'mask_meta_indices':out_enc_tr['mask_meta_indices'],
                            'shape':[maxN,maxM,out_enc_tr['shape'][2]]} ## Passing in shape to be used in sparse functions 
                 val_dict = {'nvec':out_enc_val['nvec'],
                             'mvec':out_enc_val['mvec'],
                             'mask':out_enc_val['mask'],
                             'sparse_indices':out_enc_val['sparse_indices'],
+                            'mask_meta_indices':out_enc_val['mask_meta_indices'],
                             'shape':[N,M,out_enc_val['shape'][2]]}
 
                 decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], mode=mode, verbose=2)#define the decoder
@@ -236,11 +243,9 @@ def main(opts):
                 sparse_indices_out_val = out_dec_val['sparse_indices']
 
             #loss and training
-            # rec_loss = rec_loss_fn_sp(mat, mask_tr, out_tr, sparse_indices=sparse_indices_out_tr, shape=[maxN,maxM,1]) # reconstruction loss
-            rec_loss = rec_loss_fn_sp(mat, mask_tr, out_tr, sparse_indices=sparse_indices_tr, shape=[maxN,maxM,1]) # reconstruction loss
+            rec_loss = rec_loss_fn_sp(mat, mask_tr, mask_meta_indices_tr, out_tr, sparse_indices=sparse_indices_tr, shape=[maxN,maxM,1]) # reconstruction loss
             reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
-            # rec_loss_val = rec_loss_fn_sp(mat_val, mask_val, out_val, sparse_indices=sparse_indices_out_val, shape=[N,M,1])
-            rec_loss_val = rec_loss_fn_sp(mat_val, mask_val, out_val, sparse_indices=sparse_indices_val, shape=[N,M,1])
+            rec_loss_val = rec_loss_fn_sp(mat_val, mask_val, mask_meta_indices_val, out_val, sparse_indices=sparse_indices_val, shape=[N,M,1])
             total_loss = rec_loss + reg_loss
 
             train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
@@ -327,18 +332,12 @@ if __name__ == "__main__":
            'verbose':2,
            # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            # 'maxM':1682,#num movies per submatrix
-            'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'mode':'dense', # use sparse or dense tensor representation
-           'encoder':[
-               # {'type':'matrix_dense', 'units':units},
-               #{'type':'matrix_dropout'},
-               # {'type':'matrix_dense', 'units':16},
-               # {'type':'matrix_dropout'},
-               # {'type':'matrix_dense', 'units':16},
-               # {'type':'matrix_dropout'},
+           'mode':'sparse', # use sparse or dense tensor representation
+           'encoder':[               
                {'type':'matrix_dense', 'units':units},
                # {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':units},
@@ -346,13 +345,7 @@ if __name__ == "__main__":
                {'type':'matrix_dense', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
-            'decoder':[
-               # {'type':'matrix_dense', 'units':units},
-               #{'type':'matrix_dropout'},
-               # {'type':'matrix_dense', 'units':16},
-               # {'type':'matrix_dropout'},
-               # {'type':'matrix_dense', 'units':16},
-               # {'type':'matrix_dropout'},
+            'decoder':[               
                {'type':'matrix_dense', 'units':units},
                # {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':units},
@@ -361,9 +354,9 @@ if __name__ == "__main__":
             ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
-                    'activation':tf.nn.tanh,
+                    # 'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
-                    # 'activation':tf.nn.relu,
+                    'activation':tf.nn.relu,
                     'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
@@ -381,7 +374,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 }
             },
-           'lr':.001,
+           'lr':.0001,
     }
     
     main(opts)
