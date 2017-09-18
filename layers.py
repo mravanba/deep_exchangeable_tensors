@@ -109,13 +109,11 @@ def matrix_dense(
         elif 'sparse' in mode: 
             eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
             mat = inputs.get('input', None)#N x M x K
-            mask = inputs.get('mask', None)#N x M
+            mask = inputs.get('mask', None)#N x M X 1
             sparse_indices = inputs.get('sparse_indices', None)
-            mask_meta_indices = inputs.get('mask_meta_indices', None)
 
             N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
             output =  tf.convert_to_tensor(0, np.float32)
-            # output = None
 
             if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
                 norm_N = np.float32(N)
@@ -123,22 +121,18 @@ def matrix_dense(
                 norm_NM = np.float32(N*M)
 
                 if mask is not None:
-
-                    # mat = sparse_tensor_mask_to_sparse(mat, mask, mask_meta_indices, sparse_indices=sparse_indices, shape=[N,M,K])
-                    mat = sparse_tensor_mask_to_sparse(mat, mask, mask_meta_indices, sparse_indices=None, shape=[N,M,K])
-
-                    norm_N = sparse_reduce(mask, mode='sum', axis=0, shape=[N,M,1]) + eps
-                    norm_M = sparse_reduce(mask, mode='sum', axis=1, shape=[N,M,1]) + eps
-                    norm_NM = sparse_reduce(mask, mode='sum', axis=None, shape=[N,M,1]) + eps
+                    norm_N = sparse_marginalize_mask(sparse_indices, shape=[N,M,K], axis=0, keep_dims=True) + eps
+                    norm_M = sparse_marginalize_mask(sparse_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
+                    norm_NM = sparse_marginalize_mask(sparse_indices, shape=[N,M,K], axis=None, keep_dims=True) + eps
 
                 if 'max' in kwargs.get('pool_mode', 'max') and mask is None:
-                    mat_marg_0 = sparse_reduce(mat, mode='max', axis=0, shape=[N,M,K])
-                    mat_marg_1 = sparse_reduce(mat, mode='max', axis=1, shape=[N,M,K])
-                    mat_marg_2 = sparse_reduce(mat, mode='max', axis=None, shape=[N,M,K])
+                    mat_marg_0 = sparse_reduce(sparse_indices, mat.values, mode='max', shape=[N,M,K], axis=0, keep_dims=True)
+                    mat_marg_1 = sparse_reduce(sparse_indices, mat.values, mode='max', shape=[N,M,K], axis=1, keep_dims=True)
+                    mat_marg_2 = sparse_reduce(sparse_indices, mat.values, mode='max', shape=[N,M,K], axis=None, keep_dims=True)
                 else:
-                    mat_marg_0 = sparse_reduce(mat, mode='sum', axis=0, shape=[N,M,K]) / norm_N
-                    mat_marg_1 = sparse_reduce(mat, mode='sum', axis=1, shape=[N,M,K]) / norm_M
-                    mat_marg_2 = sparse_reduce(mat, mode='sum', axis=None, shape=[N,M,K]) / norm_NM
+                    mat_marg_0 = sparse_reduce(sparse_indices, mat.values, mode='sum', shape=[N,M,K], axis=0, keep_dims=True) / norm_N
+                    mat_marg_1 = sparse_reduce(sparse_indices, mat.values, mode='sum', shape=[N,M,K], axis=1, keep_dims=True) / norm_M
+                    mat_marg_2 = sparse_reduce(sparse_indices, mat.values, mode='sum', shape=[N,M,K], axis=None, keep_dims=True) / norm_NM
 
                 theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
                 theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
@@ -148,46 +142,30 @@ def matrix_dense(
 
                 output = sparse_tensordot_sparse(mat, theta_0, [N,M,K], units, sparse_indices=sparse_indices)
                 output_0 = tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
-                output = sparse_tensor_broadcast_dense_add(output, output_0, broadcast_axis=0, shape=[N,M,units])
+                output = sparse_tensor_broadcast_dense_add(output, output_0, broadcast_axis=0, sparse_indices=sparse_indices, shape=[N,M,units])
                 output_1 = tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
-                output = sparse_tensor_broadcast_dense_add(output, output_1, broadcast_axis=1, shape=[N,M,units])
+                output = sparse_tensor_broadcast_dense_add(output, output_1, broadcast_axis=1, sparse_indices=sparse_indices, shape=[N,M,units])
                 output_2 = tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
-                output = sparse_tensor_broadcast_dense_add(output, output_2, broadcast_axis=None, shape=[N,M,units])
-
-
-                # # ##....
-                # mat = sparse_tensor_to_dense(mat, shape=[N,M,K])
-                # output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
-                # output.set_shape([N,M,units])#because of current tensorflow bug!!
-                # output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
-                # output.set_shape([N,M,units])#because of current tensorflow bug!!            
-                # output += tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
-                # output.set_shape([N,M,units])#because of current tensorflow bug!!            
-                # output += tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
-                # output.set_shape([N,M,units])#because of current tensorflow bug!! 
-                # output = dense_tensor_to_sparse(output, sparse_indices=None, shape=[N,M,units])
-
+                output = sparse_tensor_broadcast_dense_add(output, output_2, broadcast_axis=None, sparse_indices=sparse_indices, shape=[N,M,units])
 
             nvec = inputs.get('nvec', None)
             mvec = inputs.get('mvec', None)
 
             if nvec is not None:
-
                 theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)
                 output_tmp = tf.tensordot(nvec, theta_4, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# N x 1 x units
                 output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
                 if mat is not None:
-                    output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=1, shape=[N,M,units])           
+                    output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=1, sparse_indices=sparse_indices,  shape=[N,M,units])           
                 else:
                     output = output_tmp + output
 
             if mvec is not None:
-
                 theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
                 output_tmp = tf.tensordot(mvec, theta_5, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# 1 x M x units
                 output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
                 if mat is not None:
-                    output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=0, shape=[N,M,units])
+                    output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=0, sparse_indices=sparse_indices, shape=[N,M,units])
                 else:
                     output = output_tmp + output
                 
@@ -197,14 +175,13 @@ def matrix_dense(
                 else:
                     output = kwargs.get('activation')(output)
 
-                    ##....
+                    ##.... ??
                     output = dense_tensor_to_sparse(output, sparse_indices=sparse_indices, shape=[N,M,units])
-                    # output = dense_tensor_to_sparse(output, sparse_indices=None, shape=[N,M,units])
                 
             if kwargs.get('drop_mask', True):
                 mask = None
 
-            outdic = {'input':output, 'mask':mask, 'sparse_indices':sparse_indices, 'mask_meta_indices':mask_meta_indices, 'shape':[N,M,units]}
+            outdic = {'input':output, 'mask':mask, 'sparse_indices':sparse_indices, 'shape':[N,M,units]}
             return outdic
 
 
@@ -245,29 +222,17 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
             inp = inputs['input']
             N,M,K = inputs['shape']
             sparse_indices = inputs['sparse_indices']
-            mask_meta_indices = inputs['mask_meta_indices']
 
             if mask is None:
-                nvec = sparse_reduce(inp, mode=pool_mode, axis=1) / M
-                mvec = sparse_reduce(inp, mode=pool_mode, axis=0) / N
+                nvec = sparse_reduce(sparse_indices, inp.values, mode=pool_mode, shape=[N,M,K], axis=1, keep_dims=True) / M
+                mvec = sparse_reduce(sparse_indices, inp.values, mode=pool_mode, shape=[N,M,K], axis=0, keep_dims=True) / N
             else:
-                # ##....
-                # inp = sparse_tensor_to_dense(inp, shape=[N,M,K])
-                # mask = sparse_tensor_to_dense(mask, shape=[N,M,1])
-                # inp = inp * mask
-                # inp = dense_tensor_to_sparse(inp, shape=[N,M,K])
-                # mask = dense_tensor_to_sparse(mask, shape=[N,M,1])
+                norm_0 = sparse_marginalize_mask(sparse_indices, shape=[N,M,K], axis=0, keep_dims=True) + eps
+                norm_1 = sparse_marginalize_mask(sparse_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
+                nvec = sparse_reduce(sparse_indices, inp.values, mode='sum', shape=[N,M,K], axis=1, keep_dims=True) / norm_1
+                mvec = sparse_reduce(sparse_indices, inp.values, mode='sum', shape=[N,M,K], axis=0, keep_dims=True) / norm_0
 
-
-                # inp = sparse_tensor_mask_to_sparse(inp, mask, mask_meta_indices, sparse_indices=sparse_indices, shape=[N,M,K])
-                inp = sparse_tensor_mask_to_sparse(inp, mask, mask_meta_indices, sparse_indices=None, shape=[N,M,K])
-
-                norm_0 = sparse_reduce(mask, mode='sum', axis=0, shape=[N,M,1]) + eps
-                norm_1 = sparse_reduce(mask, mode='sum', axis=1, shape=[N,M,1]) + eps
-                nvec = sparse_reduce(inp, mode='sum', axis=1, shape=[N,M,K]) / norm_1
-                mvec = sparse_reduce(inp, mode='sum', axis=0, shape=[N,M,K]) / norm_0
-
-            outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'sparse_indices':sparse_indices, 'mask_meta_indices':mask_meta_indices, 'shape':[N,M,K]}
+            outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'sparse_indices':sparse_indices, 'shape':[N,M,K]}
             return outdic
                 
 
@@ -305,7 +270,7 @@ def matrix_dropout(inputs,#dropout along both axes
         # out = sparse_dropout(inp, rate=rate, training=is_training, shape=[N,M,K]) ## Eating too much memory 
 
 
-        outdic = {'input':out, 'mask':mask, 'sparse_indices':inputs['sparse_indices'], 'mask_meta_indices':inputs['mask_meta_indices'], 'shape':[N,M,K]}
+        outdic = {'input':out, 'mask':mask, 'sparse_indices':inputs['sparse_indices'], 'shape':[N,M,K]}
 
         return outdic
 
