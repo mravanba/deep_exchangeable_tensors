@@ -252,9 +252,10 @@ def main(opts):
                 total_loss = rec_loss + reg_loss
 
                 train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
-                # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+                sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+                # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=True))
+                # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
                 # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True, log_device_placement=True))
-                sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
                 sess.run(tf.global_variables_initializer())
 
                 iters_per_epoch = N//maxN * M//maxM # a bad heuristic: the whole matrix is in expectation covered in each epoch

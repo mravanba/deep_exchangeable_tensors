@@ -140,12 +140,17 @@ def matrix_dense(
                 theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
                 
 
+                # mat_marg_2 = tf.cast(mat_marg_2, dtype=tf.float32)
+
                 output = sparse_tensordot_sparse(mat, theta_0, [N,M,K], units, sparse_indices=sparse_indices)
-                output_0 = tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
+                # output_0 = tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
+                output_0 = tf.tensordot(mat_marg_0, theta_1, axes=[[2],[0]]) # 1 x M x units
                 output = sparse_tensor_broadcast_dense_add(output, output_0, broadcast_axis=0, sparse_indices=sparse_indices, shape=[N,M,units])
-                output_1 = tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
+                # output_1 = tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
+                output_1 = tf.tensordot(mat_marg_1, theta_2, axes=[[2],[0]]) # N x 1 x units
                 output = sparse_tensor_broadcast_dense_add(output, output_1, broadcast_axis=1, sparse_indices=sparse_indices, shape=[N,M,units])
-                output_2 = tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
+                # output_2 = tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
+                output_2 = tf.tensordot(mat_marg_2, theta_3, axes=[[2],[0]]) # 1 x 1 x units
                 output = sparse_tensor_broadcast_dense_add(output, output_2, broadcast_axis=None, sparse_indices=sparse_indices, shape=[N,M,units])
 
             nvec = inputs.get('nvec', None)
@@ -153,7 +158,7 @@ def matrix_dense(
 
             if nvec is not None:
                 theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)
-                output_tmp = tf.tensordot(nvec, theta_4, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# N x 1 x units
+                output_tmp = tf.tensordot(nvec, theta_4, axes=[[2],[0]])# N x 1 x units
                 output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
                 if mat is not None:
                     output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=1, sparse_indices=sparse_indices,  shape=[N,M,units])           
@@ -162,7 +167,7 @@ def matrix_dense(
 
             if mvec is not None:
                 theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
-                output_tmp = tf.tensordot(mvec, theta_5, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# 1 x M x units
+                output_tmp = tf.tensordot(mvec, theta_5, axes=[[2],[0]])# 1 x M x units
                 output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
                 if mat is not None:
                     output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=0, sparse_indices=sparse_indices, shape=[N,M,units])
