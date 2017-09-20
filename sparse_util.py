@@ -13,7 +13,7 @@ def dense_array_to_sparse(x, mask_indices=None, expand_dims=False):
     K = shape[2]
     if mask_indices is None:
         vals = x[x.nonzero()]
-        inds = get_mask_indices(x[:,:,0])
+        inds = np.array(list(zip(*x[:,:,0].nonzero())))
         inds = expand_array_indices(inds, K)
     else:
         inds = expand_array_indices(mask_indices, K)
@@ -53,11 +53,6 @@ def sparse_tensor_to_dense(x_sp, shape=None):
     return tf.scatter_nd(x_sp.indices, x_sp.values, shape)
 
 
-## Returns an array of indices at which x has non-zero values.
-def get_mask_indices(x):
-    return np.array(list(zip(*x.nonzero())))
-
-
 def expand_array_indices(mask_indices, num_features):    
     num_vals = mask_indices.shape[0]
     inds_exp = np.reshape(np.tile(range(num_features), reps=[num_vals]), newshape=[-1, 1]) # expand dimension of mask indices
@@ -71,16 +66,12 @@ def expand_array_indices(mask_indices, num_features):
 def expand_tensor_indices(mask_indices, num_features):
     num_vals = tf.shape(mask_indices)[0]
     inds_exp = tf.reshape(tf.tile(tf.range(num_features, dtype=tf.float32), multiples=[num_vals]), shape=[-1, 1]) # expand dimension of mask indices
-
-    mask_indices = tf.cast(mask_indices, dtype=tf.float32)
-    
+    mask_indices = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
     inds = tf.tile(mask_indices, multiples=[num_features,1]) # duplicate mask_indices num_features times
     inds = tf.reshape(inds, shape=[num_features, num_vals, 2])
     inds = tf.reshape(tf.transpose(inds, perm=[1,0,2]), shape=[-1,2])
     inds = tf.concat((inds, inds_exp), axis=1)
-    
     inds = tf.cast(inds, dtype=tf.int32)
-
     return inds
 
 
@@ -109,7 +100,7 @@ def sparse_reduce(mask_indices, values, mode, shape, axis=None, keep_dims=False)
         print('\nERROR - unknown <mode> in sparse_reduce()\n')
         return 
 
-    mask_indices = tf.cast(mask_indices, dtype=tf.float32)
+    mask_indices = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
     if axis is 0:
         inds = tf.cast(mask_indices[:,1], dtype=tf.int32)
         vals = tf.reshape(values, shape=[-1,K])
@@ -148,24 +139,17 @@ def sparse_reduce(mask_indices, values, mode, shape, axis=None, keep_dims=False)
 
 
 def sparse_marginalize_mask(mask_indices, shape, axis=None, keep_dims=True):
-    N = shape[0]
-    M = shape[1]
-    K = shape[2]
-
-    mask_indices = tf.cast(mask_indices, dtype=tf.float32)
-
+    mask_indices = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
     if axis is 0:
         inds = tf.cast(mask_indices[:,1], dtype=tf.int32)
-        # inds = mask_indices[:,1]
-        marg = tf.unsorted_segment_sum(tf.ones_like(inds, dtype=tf.float32), inds, M)
+        marg = tf.unsorted_segment_sum(tf.ones_like(inds, dtype=tf.float32), inds, shape[1])
         marg = tf.cast(tf.expand_dims(marg, axis=1), dtype=tf.float32)
         if keep_dims:
             marg = tf.reshape(marg, shape=[1,-1,1])
         return marg
     elif axis is 1:
         inds = tf.cast(mask_indices[:,0], dtype=tf.int32)
-        # inds = mask_indices[:,0]
-        marg = tf.unsorted_segment_sum(tf.ones_like(inds, dtype=tf.float32), inds, N)
+        marg = tf.unsorted_segment_sum(tf.ones_like(inds, dtype=tf.float32), inds, shape[0])
         marg = tf.cast(tf.expand_dims(marg, axis=1), dtype=tf.float32)
         if keep_dims:
             marg = tf.reshape(marg, shape=[-1,1,1])
@@ -182,42 +166,28 @@ def sparse_apply_activation(x_sp, activation):
 
 
 ## Like tf.tensordot but with sparse inputs and outputs. Output has non-zero value only where input has non-zero value 
-def sparse_tensordot_sparse(tensor_sp, param, in_shape, units, mask_indices=None):
+def sparse_tensordot_sparse(tensor_sp, param, in_shape, units, mask_indices):
     N,M,K = in_shape
     num_vals = tf.shape(tensor_sp.indices)[0]
     num_unique = tf.cast(tf.divide(num_vals, K), dtype=tf.int32)
-    if mask_indices is None:
-        inds = tf.strided_slice(tensor_sp.indices, begin=[0,0], end=[num_vals, 2], strides=[K,1])
-    else:
-        inds = mask_indices    
-
     inds_exp = tf.reshape(tf.tile(tf.range(units, dtype=tf.float32), multiples=tf.stack([num_unique])), [-1,1])    
-
-    inds = tf.cast(inds, dtype=tf.float32)
-
+    inds = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
     inds = tf.reshape(tf.tile(inds, [1,units]), [-1,2])
     inds = tf.concat((inds, inds_exp), axis=1)
-
     inds = tf.cast(inds, dtype=tf.int32)
-
     vals = tf.matmul(tf.reshape(tensor_sp.values, shape=[-1,K]), param)
     vals = tf.reshape(vals, shape=[-1])
-
     return tf.SparseTensorValue(inds, vals, [N,M,units])
 
 
 ## x_sp is a sparse tensor of shape [N,M,K], y is dense of shape [1,M,K], [N,1,K], or [1,1,K].
 ## Broadcast add y onto the sparse coordinates of x_sp.
 ## Produces a sparse tensor with the same shape as x_sp, and non-zero values corresponding to those of x_sp
-def sparse_tensor_broadcast_dense_add(x_sp, y, broadcast_axis=None, mask_indices=None, shape=None):
+def sparse_tensor_broadcast_dense_add(x_sp, y, mask_indices, broadcast_axis=None, shape=None):
     if shape is None:
         shape = x_sp.dense_shape
     K = shape[2]
-    if mask_indices is None:
-        inds = x_sp.indices
-    else:
-        inds = expand_tensor_indices(mask_indices, K)
-
+    inds = expand_tensor_indices(mask_indices, K)
     num_vals = tf.shape(inds)[0]
     if broadcast_axis is 0:
         temp_inds = tf.strided_slice(inds, begin=[0,0], end=[num_vals,2], strides=[K,1])
@@ -241,7 +211,6 @@ def sparse_tensor_broadcast_dense_add(x_sp, y, broadcast_axis=None, mask_indices
         vals = tf.reshape(x_sp.values, shape=[-1,K])
         vals = tf.reshape(tf.add(vals, y), shape=[-1])
         return tf.SparseTensorValue(inds, vals, shape)
-
 
 
 def sparse_dropout(values, mask_indices, shape, rate=0.0, training=True):

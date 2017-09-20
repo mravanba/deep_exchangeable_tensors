@@ -3,6 +3,8 @@ from sparse_util import *
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, model_variable
 
+##### Dense Layers: #####
+
 def matrix_dense(
         inputs,
         #units = 100,
@@ -101,7 +103,70 @@ def matrix_dense(
         ##.....
         outdic = {'input':output, 'mask':mask}
         return outdic
+
+
+def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
+                verbose=1,
+                scope=None,
+                **kwargs
+                ):
+    pool_mode = kwargs.get('pool_mode', 'max')#max or average pooling
+    mode = kwargs.get('mode', 'dense')
+
+    eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
+    with tf.variable_scope(scope, default_name="matrix_dense"):
+        
+        mask = inputs.get('mask', None)
+        inp = inputs['input']
+        if 'mean' in pool_mode or mask is not None:
+            op = tf.reduce_mean
+        else:
+            op = tf.reduce_max
+        if mask is None:
+            nvec = op(inp, axis=1, keep_dims=True)
+            mvec = op(inp, axis=0, keep_dims=True)
+        else:
+            inp = inp * mask
+            norm_0 = tf.reduce_sum(mask, axis=0, keep_dims=True) + eps
+            norm_1 = tf.reduce_sum(mask, axis=1, keep_dims=True) + eps
+            nvec = tf.reduce_sum(inp, axis=1, keep_dims=True)/norm_1
+            mvec = tf.reduce_sum(inp, axis=0, keep_dims=True)/norm_0
+
+        outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask}
+        return outdic    
+
+
+def matrix_dropout(inputs,#dropout along both axes
+                    verbose=1,
+                    scope=None,
+                    is_training=True,
+                    **kwargs
+                    ):
+    rate = kwargs.get('rate', .1)
+    mode = kwargs.get('mode', 'dense')
+    inp = inputs['input']
+    mask = inputs.get('mask', None)
+    N, M, K = inp.get_shape().as_list()
+    out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
+    out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)
+
+    return {'input':out, 'mask':mask}    
+
+
+# def dense(
+#         inputs,
+#         verbose = 1,
+#         **kwargs):
+    
+#     inp = inputs['input']
+#     units = kwargs.get('units', 100)
+#     outp = tf.layers.dense(inp, units, **kwargs)
+#     output = {'input':outp}
+#     return output
+
             
+
+##### Sparse Layers: #####
 
 def matrix_sparse(
         inputs,
@@ -163,11 +228,11 @@ def matrix_sparse(
             
             output = sparse_tensordot_sparse(mat, theta_0, [N,M,K], units, mask_indices=mask_indices)
             output_0 = tf.tensordot(mat_marg_0, theta_1, axes=[[2],[0]]) # 1 x M x units
-            output = sparse_tensor_broadcast_dense_add(output, output_0, broadcast_axis=0, mask_indices=mask_indices, shape=[N,M,units])
+            output = sparse_tensor_broadcast_dense_add(output, output_0, mask_indices, broadcast_axis=0, shape=[N,M,units])
             output_1 = tf.tensordot(mat_marg_1, theta_2, axes=[[2],[0]]) # N x 1 x units
-            output = sparse_tensor_broadcast_dense_add(output, output_1, broadcast_axis=1, mask_indices=mask_indices, shape=[N,M,units])
+            output = sparse_tensor_broadcast_dense_add(output, output_1, mask_indices, broadcast_axis=1, shape=[N,M,units])
             output_2 = tf.tensordot(mat_marg_2, theta_3, axes=[[2],[0]]) # 1 x 1 x units
-            output = sparse_tensor_broadcast_dense_add(output, output_2, broadcast_axis=None, mask_indices=mask_indices, shape=[N,M,units])
+            output = sparse_tensor_broadcast_dense_add(output, output_2, mask_indices, broadcast_axis=None, shape=[N,M,units])
 
         nvec = inputs.get('nvec', None)
         mvec = inputs.get('mvec', None)
@@ -177,7 +242,7 @@ def matrix_sparse(
             output_tmp = tf.tensordot(nvec, theta_4, axes=[[2],[0]])# N x 1 x units
             output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
             if mat is not None:
-                output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=1, mask_indices=mask_indices,  shape=[N,M,units])           
+                output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, broadcast_axis=1, shape=[N,M,units])           
             else:
                 output = output_tmp + output
 
@@ -186,7 +251,7 @@ def matrix_sparse(
             output_tmp = tf.tensordot(mvec, theta_5, axes=[[2],[0]])# 1 x M x units
             output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
             if mat is not None:
-                output = sparse_tensor_broadcast_dense_add(output, output_tmp, broadcast_axis=0, mask_indices=mask_indices, shape=[N,M,units])
+                output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, broadcast_axis=0, shape=[N,M,units])
             else:
                 output = output_tmp + output
             
@@ -201,38 +266,6 @@ def matrix_sparse(
             mask = None
 
         outdic = {'input':output, 'mask':mask, 'mask_indices':mask_indices, 'shape':[N,M,units]}
-        return outdic
-
-
-
-def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
-                verbose=1,
-                scope=None,
-                **kwargs
-                ):
-    pool_mode = kwargs.get('pool_mode', 'max')#max or average pooling
-    mode = kwargs.get('mode', 'dense')
-
-    eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
-    with tf.variable_scope(scope, default_name="matrix_dense"):
-        
-        mask = inputs.get('mask', None)
-        inp = inputs['input']
-        if 'mean' in pool_mode or mask is not None:
-            op = tf.reduce_mean
-        else:
-            op = tf.reduce_max
-        if mask is None:
-            nvec = op(inp, axis=1, keep_dims=True)
-            mvec = op(inp, axis=0, keep_dims=True)
-        else:
-            inp = inp * mask
-            norm_0 = tf.reduce_sum(mask, axis=0, keep_dims=True) + eps
-            norm_1 = tf.reduce_sum(mask, axis=1, keep_dims=True) + eps
-            nvec = tf.reduce_sum(inp, axis=1, keep_dims=True)/norm_1
-            mvec = tf.reduce_sum(inp, axis=0, keep_dims=True)/norm_0
-
-        outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask}
         return outdic
 
                 
@@ -262,24 +295,6 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
 
         outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'mask_indices':mask_indices, 'shape':[N,M,K]}
         return outdic             
-
-
-def matrix_dropout(inputs,#dropout along both axes
-                    verbose=1,
-                    scope=None,
-                    is_training=True,
-                    **kwargs
-                    ):
-    rate = kwargs.get('rate', .1)
-    mode = kwargs.get('mode', 'dense')
-    inp = inputs['input']
-    mask = inputs.get('mask', None)
-    N, M, K = inp.get_shape().as_list()
-    out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
-    out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)
-
-    return {'input':out, 'mask':mask}
-
         
 
 def matrix_dropout_sparse(inputs,
@@ -301,15 +316,4 @@ def matrix_dropout_sparse(inputs,
 
     return {'input':out, 'mask':mask, 'mask_indices':mask_indices, 'shape':[N,M,K]}
 
-
-# def dense(
-#         inputs,
-#         verbose = 1,
-#         **kwargs):
-    
-#     inp = inputs['input']
-#     units = kwargs.get('units', 100)
-#     outp = tf.layers.dense(inp, units, **kwargs)
-#     output = {'input':outp}
-#     return output
 

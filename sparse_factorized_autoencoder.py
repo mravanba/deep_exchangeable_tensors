@@ -96,10 +96,10 @@ def main(opts):
         
 
     with tf.Graph().as_default():
-
+        # with tf.device('/gpu:0'):
             
-        mat_inds, mat_vals = sparse_placeholders(name='mat')
-        mat = tf.SparseTensorValue(mat_inds, mat_vals, [maxN,maxM,num_features])
+        mat_inds, mat_vals = sparse_placeholders(name='mat_tr')
+        mat_tr = tf.SparseTensorValue(mat_inds, mat_vals, [maxN,maxM,num_features])
 
         mask_tr_inds, mask_tr_vals = sparse_placeholders(name='mask_tr')
         mask_tr = tf.SparseTensorValue(mask_tr_inds, mask_tr_vals, [maxN,maxM,1])
@@ -120,7 +120,7 @@ def main(opts):
         mask_indices_tr_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr_val')
 
         with tf.variable_scope("encoder"):
-            tr_dict = {'input':mat,
+            tr_dict = {'input':mat_tr,
                        'mask':mask_tr,
                        'mask_indices':mask_indices_tr,
                        'shape':[maxN,maxM,num_features]} ## Passing in shape to be used in sparse functions
@@ -153,7 +153,7 @@ def main(opts):
             out_val = out_dec_val['input']
 
         #loss and training
-        rec_loss = rec_loss_fn_sp(mat, mask_tr, out_tr, mask_indices=mask_indices_tr, shape=[maxN,maxM,1]) # reconstruction loss
+        rec_loss = rec_loss_fn_sp(mat_tr, mask_tr, out_tr, mask_indices=mask_indices_tr, shape=[maxN,maxM,1]) # reconstruction loss
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
         rec_loss_val = rec_loss_fn_sp(mat_val, mask_val, out_val, mask_indices=mask_indices_val, shape=[N,M,1])
         total_loss = rec_loss + reg_loss

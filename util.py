@@ -117,11 +117,25 @@ def get_data(dataset='movielens-small',
         #             'mask_val_sp':mask_val_sp,
         #             'mask_tr_val_sp':mask_tr_val_sp}
 
+
+
+        # data = {'mat':mat[:,:,None],
+        #         'mask_tr':mask_tr[:,:,None],
+        #         'mask_ts':mask_ts[:,:,None],
+        #         'mask_val':mask_valid[:,:,None],
+        #         'mask_tr_val':mask_tr_val[:,:,None]}
+
+
         data = {'mat':mat[:,:,None],
                 'mask_tr':mask_tr[:,:,None],
                 'mask_ts':mask_ts[:,:,None],
                 'mask_val':mask_valid[:,:,None],
-                'mask_tr_val':mask_tr_val[:,:,None]}
+                'mask_tr_val':mask_tr_val[:,:,None],
+                'mat_sp':
+                'mask_indices_tr':
+                'mask_indices_val':
+                'mask_indices_tr_val':}
+
         # pdb.set_trace()
         return data
 
