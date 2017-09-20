@@ -24,7 +24,6 @@ def matrix_dense(
     mvec = None, # 1 x M x K'' features for cols
     '''
     units = kwargs.get('units')
-    mode = kwargs.get('mode', 'dense')
 
     if not scope:
         scope = "matrix_dense"
@@ -36,73 +35,72 @@ def matrix_dense(
         #we should have the input matrix or at least one vector per dimension
         assert(('nvec' in inputs and 'mvec' in inputs) or 'input' in inputs)
 
-        if 'dense' in mode:
-            eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
-            mat = inputs.get('input', None)#N x M x K        
-            mask = inputs.get('mask', None)#N x M
-            output =  tf.convert_to_tensor(0, np.float32)
+        eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
+        mat = inputs.get('input', None)#N x M x K        
+        mask = inputs.get('mask', None)#N x M
+        output =  tf.convert_to_tensor(0, np.float32)
 
-            if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties                
-                N,M,K = mat.get_shape().as_list()
-                norm_N = np.float32(N)
-                norm_M = np.float32(M)
-                norm_NM = np.float32(N*M)
-                if mask is not None:                    
-                    mat = mat * mask
-                    norm_N = tf.reduce_sum(mask, axis=0, keep_dims=True) + eps# 1, M, 1
-                    norm_M = tf.reduce_sum(mask, axis=1, keep_dims=True) + eps# N, 1, 1
-                    norm_NM = tf.reduce_sum(mask, axis=[0,1], keep_dims=True) + eps# 1, 1, 1
+        if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties                
+            N,M,K = mat.get_shape().as_list()
+            norm_N = np.float32(N)
+            norm_M = np.float32(M)
+            norm_NM = np.float32(N*M)
+            if mask is not None:                    
+                mat = mat * mask
+                norm_N = tf.reduce_sum(mask, axis=0, keep_dims=True) + eps# 1, M, 1
+                norm_M = tf.reduce_sum(mask, axis=1, keep_dims=True) + eps# N, 1, 1
+                norm_NM = tf.reduce_sum(mask, axis=[0,1], keep_dims=True) + eps# 1, 1, 1
 
-                if 'max' in kwargs.get('pool_mode', 'max') and mask is None:
-                    mat_marg_0 = tf.reduce_max(mat, axis=0, keep_dims=True)
-                    mat_marg_1 = tf.reduce_max(mat, axis=1, keep_dims=True)
-                    mat_marg_2 = tf.reduce_max(mat_marg_0, axis=1, keep_dims=True)
-                else:
-                    mat_marg_0 = tf.reduce_sum(mat, axis=0, keep_dims=True)/norm_N # 1 x M x K
-                    mat_marg_1 = tf.reduce_sum(mat, axis=1, keep_dims=True)/norm_M # N x 1 x K
-                    mat_marg_2 = tf.reduce_sum(mat_marg_0, axis=1, keep_dims=True)/norm_NM # 1 x 1 x K
+            if 'max' in kwargs.get('pool_mode', 'max') and mask is None:
+                mat_marg_0 = tf.reduce_max(mat, axis=0, keep_dims=True)
+                mat_marg_1 = tf.reduce_max(mat, axis=1, keep_dims=True)
+                mat_marg_2 = tf.reduce_max(mat_marg_0, axis=1, keep_dims=True)
+            else:
+                mat_marg_0 = tf.reduce_sum(mat, axis=0, keep_dims=True)/norm_N # 1 x M x K
+                mat_marg_1 = tf.reduce_sum(mat, axis=1, keep_dims=True)/norm_M # N x 1 x K
+                mat_marg_2 = tf.reduce_sum(mat_marg_0, axis=1, keep_dims=True)/norm_NM # 1 x 1 x K
 
-                theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
-                theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
-                theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
-                theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
+            theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
+            theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
+            theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
+            theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
 
-                output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
-                output.set_shape([N,M,units])#because of current tensorflow bug!!
-                output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
-                output.set_shape([N,M,units])#because of current tensorflow bug!!            
-                output += tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
-                output.set_shape([N,M,units])#because of current tensorflow bug!!            
-                output += tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
-                output.set_shape([N,M,units])#because of current tensorflow bug!!            
-                  
+            output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
+            output.set_shape([N,M,units])#because of current tensorflow bug!!
+            output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
+            output.set_shape([N,M,units])#because of current tensorflow bug!!            
+            output += tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
+            output.set_shape([N,M,units])#because of current tensorflow bug!!            
+            output += tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
+            output.set_shape([N,M,units])#because of current tensorflow bug!!            
+              
 
-            nvec = inputs.get('nvec', None)
-            mvec = inputs.get('mvec', None)
-            if nvec is not None:
-                N,_,K = nvec.get_shape().as_list()
-                theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)
-                output_tmp = tf.tensordot(nvec, theta_4, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# N x 1 x units
-                output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
-                output = output_tmp + output
+        nvec = inputs.get('nvec', None)
+        mvec = inputs.get('mvec', None)
+        if nvec is not None:
+            N,_,K = nvec.get_shape().as_list()
+            theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)
+            output_tmp = tf.tensordot(nvec, theta_4, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# N x 1 x units
+            output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
+            output = output_tmp + output
 
-            if mvec is not None:
-                _,M,K = mvec.get_shape().as_list()
-                theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
-                output_tmp = tf.tensordot(mvec, theta_5, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# 1 x M x units
-                output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
-                output = output_tmp + output
-            
-            if kwargs.get('activation', None) is not None:
-                output = kwargs.get('activation')(output)
-            if kwargs.get('drop_mask', True):
-                mask = None
-            ##.....
-            # else:
-            #     output = mask * output
-            ##.....
-            outdic = {'input':output, 'mask':mask}
-            return outdic
+        if mvec is not None:
+            _,M,K = mvec.get_shape().as_list()
+            theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
+            output_tmp = tf.tensordot(mvec, theta_5, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# 1 x M x units
+            output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
+            output = output_tmp + output
+        
+        if kwargs.get('activation', None) is not None:
+            output = kwargs.get('activation')(output)
+        if kwargs.get('drop_mask', True):
+            mask = None
+        ##.....
+        # else:
+        #     output = mask * output
+        ##.....
+        outdic = {'input':output, 'mask':mask}
+        return outdic
             
 
 def matrix_sparse(
@@ -119,8 +117,7 @@ def matrix_sparse(
         **kwargs
         ):
 
-    units = kwargs.get('units')
-    # mode = kwargs.get('mode', 'dense')
+    units = kwargs.get('units')    
 
     if not scope:
         scope = "matrix_sparse"
