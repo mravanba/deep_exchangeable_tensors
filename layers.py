@@ -306,12 +306,9 @@ def matrix_dropout_sparse(inputs,
     inp = inputs['input']
     mask_indices = inputs.get('mask_indices', None)
     N,M,K = inputs['shape']
-    
-    ##...
-    mask = inputs.get('mask', None)
    
     out = sparse_dropout(inp.values, mask_indices, [N,M,K], rate=rate, training=is_training)
 
-    return {'input':out, 'mask':mask, 'mask_indices':mask_indices, 'shape':[N,M,K]}
+    return {'input':out, 'mask_indices':mask_indices, 'shape':[N,M,K]}
 
 

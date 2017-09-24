@@ -39,11 +39,11 @@ def main(opts):
     data = get_data(path, train=.8, valid=.2, test=.001)
     
     #build encoder and decoder and use VAE loss
-    N, M, num_features = data['mat'].shape
+    N, M, num_features = data['mat_tr_val'].shape
     maxN, maxM = opts['maxN'], opts['maxM']
 
-    # if N < maxN: maxN = N
-    # if M < maxM: maxM = M
+    if N < maxN: maxN = N
+    if M < maxM: maxM = M
 
     if opts['verbose'] > 0:
         print('\nRun Settings:')
@@ -51,9 +51,6 @@ def main(opts):
         print('drop mask: ', opts['defaults']['matrix_dense']['drop_mask'])
         print('Exchangable layer pool mode: ', opts['defaults']['matrix_dense']['pool_mode'])
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool']['pool_mode'])
-        print('dense channels: ', units)
-        print('latent features: ', latent_features)
-        print('number of layers: ', len(opts['decoder'])-1)
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_dense']['activation'])
         print('maxN: ', opts['maxN'])
@@ -105,7 +102,7 @@ def main(opts):
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         sess.run(tf.global_variables_initializer())
 
-        iters_per_epoch = N//maxN * M//maxM # a bad heuristic: the whole matrix is in expectation covered in each epoch
+        iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
         
         min_loss = 5
         min_loss_epoch = 0
@@ -116,7 +113,7 @@ def main(opts):
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
-                tr_dict = {mat: data['mat'][inds_],
+                tr_dict = {mat: data['mat_tr_val'][inds_],
                            mask_tr:data['mask_tr'][inds_]}
 
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -127,9 +124,8 @@ def main(opts):
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-            val_dict = {mat_val:data['mat'],
+            val_dict = {mat_val:data['mat_tr_val'],
                         mask_val:data['mask_val'],
-                        # mask_tr_val:data['mask_tr']}
                         mask_tr_val:data['mask_tr_val']}
         
             bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
@@ -142,31 +138,28 @@ def main(opts):
 
 if __name__ == "__main__":
     
-    units = 32
-    latent_features = 5
-
     opts ={'epochs': 500,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           # 'maxM':1682,#num movies per submatrix
-           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':100,#num movies per submatrix
+           'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':1682,#num movies per submatrix
+           # 'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           # 'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
            'encoder':[
-               {'type':'matrix_dense', 'units':units},
+               {'type':'matrix_dense', 'units':32},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units},
+               {'type':'matrix_dense', 'units':32},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
-               {'type':'matrix_dense', 'units':units},
+               {'type':'matrix_dense', 'units':32},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units},
+               {'type':'matrix_dense', 'units':32},
                # {'type':'matrix_dropout'},
                 {'type':'matrix_dense', 'units':1, 'activation':None},
             ],

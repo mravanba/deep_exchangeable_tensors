@@ -182,7 +182,8 @@ def sparse_apply_activation(x_sp, activation):
 ## Like tf.tensordot but with sparse inputs and outputs. Output has non-zero value only where input has non-zero value 
 def sparse_tensordot_sparse(tensor_sp, param, in_shape, units, mask_indices):
     N,M,K = in_shape
-    num_vals = tf.shape(tensor_sp.indices)[0]
+    # num_vals = tf.shape(tensor_sp.indices)[0]
+    num_vals = tf.shape(mask_indices)[0] * K
     num_unique = tf.cast(tf.divide(num_vals, K), dtype=tf.int32)
     inds_exp = tf.reshape(tf.tile(tf.range(units, dtype=tf.float32), multiples=tf.stack([num_unique])), [-1,1])    
     inds = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu

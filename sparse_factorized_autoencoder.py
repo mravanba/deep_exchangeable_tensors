@@ -27,20 +27,6 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
             yield ind_n, ind_m 
 
 
-# def sample_submatrix_sp(mask_sp, maxN, maxM):
-#     '''
-#     returns sparse indices to be sampled 
-#     '''
-#     N,M,_ = mask_sp['dense_shape']
-#     max_val = mask_sp['values'].shape[0]
-#     num_samples = np.minimum(max_val, maxN*maxM)
-#     # num_samples = 10000
-#     for n in range(N // maxN):
-#         for m in range(M // maxM):
-#             sample = np.random.choice(max_val, size=num_samples, replace=False)
-#             sample = np.sort(sample)
-#             yield sample
-
 
 def sample_submatrix_sp(mask_indices, N, M, maxN, maxM):
     max_val = mask_indices.shape[0]
@@ -84,9 +70,6 @@ def main(opts):
         print('drop mask: ', opts['defaults']['matrix_sparse']['drop_mask'])
         print('Exchangable layer pool mode: ', opts['defaults']['matrix_sparse']['pool_mode'])
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool_sparse']['pool_mode'])
-        print('dense channels: ', units)
-        print('latent features: ', latent_features)
-        print('number of layers: ', len(opts['decoder'])-1)
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_sparse']['activation'])
         print('maxN: ', opts['maxN'])
@@ -154,7 +137,7 @@ def main(opts):
         # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True, log_device_placement=True))
         sess.run(tf.global_variables_initializer())
 
-        iters_per_epoch = N//maxN * M//maxM # a bad heuristic: the whole matrix is in expectation covered in each epoch
+        iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
 
         min_loss = 5
         min_loss_epoch = 0
@@ -167,9 +150,9 @@ def main(opts):
             #     tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
             #                 mask_indices_tr:data['mask_indices_tr'][sample_]}
 
+
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
-
 
                 mat_sp = data['mat_tr_val'][inds_] * data['mask_tr'][inds_]
                 mat_sp = dense_array_to_sparse(mat_sp)
@@ -177,7 +160,6 @@ def main(opts):
                 
                 tr_dict = {mat_values_tr:mat_sp['values'],
                             mask_indices_tr:mask_tr_sp['indices'][:,0:2]}
-
 
 
                 
@@ -208,31 +190,28 @@ def main(opts):
 
 if __name__ == "__main__":
     
-    units = 32
-    latent_features = 5
-
     opts ={'epochs': 500,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           # 'maxM':1682,#num movies per submatrix
-           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':100,#num movies per submatrix
+           'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':1682,#num movies per submatrix
+           # 'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           # 'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
            'encoder':[
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':32},
                # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':32},
                # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_sparse', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':32},
                # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':32},
                # {'type':'matrix_dropout_sparse'},
                 {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
