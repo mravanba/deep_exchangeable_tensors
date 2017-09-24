@@ -21,6 +21,20 @@ def dense_array_to_sparse(x, mask_indices=None, expand_dims=False):
     return {'indices':inds, 'values':vals, 'dense_shape':shape}
 
 
+def dense_array_to_sparse_values(x, mask_indices):
+    shape = x.shape
+    K = shape[2]
+    inds = expand_array_indices(mask_indices, K)
+    return np.reshape(x[list(zip(*inds))], [-1])
+
+
+def get_mask_indices(mask):
+    if len(mask.shape) is 3:
+        mask = mask[:,:,0]
+    return np.array(list(zip(*mask.nonzero())))
+
+
+
 ## Mostly used for debugging
 ## x_sp is dictionary of the from: 
 ## {'indices':inds, 'values':vals, 'dense_shape':shape} 

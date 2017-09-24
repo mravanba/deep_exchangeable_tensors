@@ -196,7 +196,6 @@ def matrix_sparse(
 
         eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
         mat = inputs.get('input', None)#N x M x K
-        mask = inputs.get('mask', None)#N x M X 1
         mask_indices = inputs.get('mask_indices', None)
 
         N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
@@ -263,9 +262,9 @@ def matrix_sparse(
                 output = dense_tensor_to_sparse(output, mask_indices=mask_indices, shape=[N,M,units])
             
         if kwargs.get('drop_mask', True):
-            mask = None
+            mask_indices = None
 
-        outdic = {'input':output, 'mask':mask, 'mask_indices':mask_indices, 'shape':[N,M,units]}
+        outdic = {'input':output, 'mask_indices':mask_indices, 'shape':[N,M,units]}
         return outdic
 
                 
@@ -274,7 +273,6 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
                         scope=None,
                         **kwargs
                         ):
-    mask = inputs.get('mask', None)
     inp = inputs['input']
     N,M,K = inputs['shape']
     mask_indices = inputs['mask_indices']
@@ -284,7 +282,7 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
     eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
     with tf.variable_scope(scope, default_name="matrix_sparse"):
 
-        if mask is None:
+        if mask_indices is None:
             nvec = sparse_reduce(mask_indices, inp.values, mode=pool_mode, shape=[N,M,K], axis=1, keep_dims=True) / M
             mvec = sparse_reduce(mask_indices, inp.values, mode=pool_mode, shape=[N,M,K], axis=0, keep_dims=True) / N
         else:
@@ -293,7 +291,7 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
             nvec = sparse_reduce(mask_indices, inp.values, mode='sum', shape=[N,M,K], axis=1, keep_dims=True) / norm_1
             mvec = sparse_reduce(mask_indices, inp.values, mode='sum', shape=[N,M,K], axis=0, keep_dims=True) / norm_0
 
-        outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'mask_indices':mask_indices, 'shape':[N,M,K]}
+        outdic = {'nvec':nvec, 'mvec':mvec, 'mask_indices':mask_indices, 'shape':[N,M,K]}
         return outdic             
         
 
