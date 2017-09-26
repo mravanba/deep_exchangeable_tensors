@@ -1,11 +1,9 @@
 import numpy as np
 import tensorflow as tf
-import math
 
-
-## Used to get sparse representation of input data
-## x should be a np.ndarray-type object 
-## outputs a dictionary representing a sparse np.ndarray
+# Used to get sparse representation of input data
+# x should be a np.ndarray-type object
+# outputs a dictionary representing a sparse np.ndarray
 def dense_array_to_sparse(x, mask_indices=None, expand_dims=False):
     if expand_dims: 
         x = np.expand_dims(x, 2)
@@ -21,6 +19,7 @@ def dense_array_to_sparse(x, mask_indices=None, expand_dims=False):
     return {'indices':inds, 'values':vals, 'dense_shape':shape}
 
 
+# Extract values of x at indices corresponding to mask_indices
 def dense_array_to_sparse_values(x, mask_indices):
     shape = x.shape
     K = shape[2]
@@ -28,18 +27,18 @@ def dense_array_to_sparse_values(x, mask_indices):
     return np.reshape(x[list(zip(*inds))], [-1])
 
 
+# Returns non-zero indices of mask
 def get_mask_indices(mask):
     if len(mask.shape) is 3:
         mask = mask[:,:,0]
     return np.array(list(zip(*mask.nonzero())))
 
 
-
-## Mostly used for debugging
-## x_sp is dictionary of the from: 
-## {'indices':inds, 'values':vals, 'dense_shape':shape} 
-## representing a sparse tensor 
-## output is a np.ndarray
+# Mostly used for debugging
+# x_sp is dictionary of the from:
+# {'indices':inds, 'values':vals, 'dense_shape':shape}
+# representing a sparse tensor
+# output is a np.ndarray
 def sparse_array_to_dense(x_sp, shape=None):
     if shape is None:
         shape = x_sp['dense_shape']    
@@ -67,6 +66,7 @@ def sparse_tensor_to_dense(x_sp, shape=None):
     return tf.scatter_nd(x_sp.indices, x_sp.values, shape)
 
 
+# Given np array mask_indices in [N,M], return equivalent indices in [N,M,num_features]
 def expand_array_indices(mask_indices, num_features):    
     num_vals = mask_indices.shape[0]
     inds_exp = np.reshape(np.tile(range(num_features), reps=[num_vals]), newshape=[-1, 1]) # expand dimension of mask indices
@@ -77,6 +77,7 @@ def expand_array_indices(mask_indices, num_features):
     return inds
 
 
+# Given tensor mask_indices in [N,M], return equivalent indices in [N,M,num_features]
 def expand_tensor_indices(mask_indices, num_features):
     num_vals = tf.shape(mask_indices)[0]
     inds_exp = tf.reshape(tf.tile(tf.range(num_features, dtype=tf.float32), multiples=[num_vals]), shape=[-1, 1]) # expand dimension of mask indices
@@ -89,11 +90,13 @@ def expand_tensor_indices(mask_indices, num_features):
     return inds
 
 
+# Equivalent to tf.reduce_ sum/max/mean, but for sparse tensors.
+# mask_indices are [N,M] non-zero indices
+# Returns a dense tensor
 def sparse_reduce(mask_indices, values, mode, shape, axis=None, keep_dims=False):
     N = shape[0]
     M = shape[1]
     K = shape[2]
-    num_values = tf.shape(mask_indices)[0] / K
 
     if 'sum' in mode:
         op = tf.unsorted_segment_sum
@@ -152,6 +155,8 @@ def sparse_reduce(mask_indices, values, mode, shape, axis=None, keep_dims=False)
         print('\nERROR - unknown <axis> in sparse_reduce()\n')
 
 
+# Equivalent to tf.reduce_sum applied to 2d mask
+# Returns a dense tensor
 def sparse_marginalize_mask(mask_indices, shape, axis=None, keep_dims=True):
     mask_indices = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
     if axis is 0:
@@ -228,6 +233,7 @@ def sparse_tensor_broadcast_dense_add(x_sp, y, mask_indices, broadcast_axis=None
         return tf.SparseTensorValue(inds, vals, shape)
 
 
+# Apply dropout to non-zero values
 def sparse_dropout(values, mask_indices, shape, rate=0.0, training=True):
     # rate = 2*rate - rate*rate # match overall dropout rate of dense version
     K = shape[2]

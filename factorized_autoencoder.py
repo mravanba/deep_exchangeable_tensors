@@ -2,6 +2,7 @@ import tensorflow as tf
 from base import Model
 from util import *
 from sparse_util import *
+import math
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM):
@@ -113,7 +114,7 @@ def main(opts):
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
-                tr_dict = {mat: data['mat_tr_val'][inds_],
+                tr_dict = {mat:data['mat_tr_val'][inds_],
                            mask_tr:data['mask_tr'][inds_]}
 
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -165,9 +166,9 @@ if __name__ == "__main__":
             ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
-                    # 'activation':tf.nn.tanh,
+                    'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
-                    'activation':tf.nn.relu,
+                    # 'activation':tf.nn.relu,
                     'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
@@ -185,7 +186,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 },                
             },
-           'lr':.0001,
+           'lr':.001,
     }
     
     main(opts)

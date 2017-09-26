@@ -2,6 +2,8 @@ import tensorflow as tf
 from base import Model
 from util import *
 from sparse_util import *
+import math
+
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM):
@@ -27,7 +29,6 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
             yield ind_n, ind_m 
 
 
-
 def sample_submatrix_sp(mask_indices, N, M, maxN, maxM):
     max_val = mask_indices.shape[0]
     num_samples = np.minimum(max_val, maxN*maxM)    
@@ -39,15 +40,14 @@ def sample_submatrix_sp(mask_indices, N, M, maxN, maxM):
 
 
 def rec_loss_fn_sp(mat_values, mask_indices, mask_split, rec_values):
-    mask_indices = tf.cast(mask_indices, tf.float32) 
+    mask_indices = tf.cast(mask_indices, tf.float32) # Casting to floats so calculation can be run on GPU
     mask_split = tf.cast(mask_split, tf.float32)
     diffs = (mat_values - rec_values)**2
-    return tf.tensordot(diffs, mask_split, axes=1) / tf.cast(tf.shape(mask_indices)[0], tf.float32)
+    return tf.squeeze(tf.matmul(tf.reshape(diffs, [1,-1]), tf.reshape(mask_split, [-1,1]))) / tf.cast(tf.shape(mask_indices)[0], tf.float32)
 
 
 def rec_loss_fn(mat, mask, rec):
     return ((tf.reduce_sum(((mat - rec)**2)*mask))/tf.reduce_sum(mask))#average l2-error over non-zero entries
-
 
 
 def main(opts):
@@ -75,20 +75,16 @@ def main(opts):
         print('maxN: ', opts['maxN'])
         print('maxM: ', opts['maxM'])
         print('')
-        
 
     with tf.Graph().as_default():
         # with tf.device('/gpu:0'):
             
         mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
         mask_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr')
-
-        mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
+        # mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
         mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
-
         mat_values_tr_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr_val')
         mask_indices_tr_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr_val')
-
         mask_tr_val_split = tf.placeholder(tf.int64, shape=[None], name='mask_tr_val_split')
 
         ##.....
@@ -125,7 +121,7 @@ def main(opts):
             out_val = out_dec_val['input']
 
         #loss and training
-        rec_loss = rec_loss_fn_sp(mat_values_tr, mask_indices_tr, tf.ones_like(mat_values_tr), out_tr.values)
+        rec_loss = rec_loss_fn_sp(mat_values_tr, mask_indices_tr, tf.ones_like(mat_values_tr, dtype=tf.float32), out_tr.values)
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
         rec_loss_val = rec_loss_fn_sp(mat_values_tr_val, mask_indices_val, mask_tr_val_split, out_val.values)
         total_loss = rec_loss + reg_loss
@@ -145,11 +141,10 @@ def main(opts):
         for ep in range(opts['epochs']):
             begin = time.time()
             loss_tr_, rec_loss_tr_, loss_val_ = 0,0,0
-            # for sample_ in tqdm(sample_submatrix_sp(data['mask_indices_tr'], N, M, maxN, maxM), total=iters_per_epoch):#go over mini-batches
+            # for sample_ in tqdm(sample_submatrix_sp(data['mask_indices_tr'], N, M, maxN, maxM), total=iters_per_epoch):# Sampling dense indices directly doesnt work right now.
 
             #     tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
             #                 mask_indices_tr:data['mask_indices_tr'][sample_]}
-
 
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
@@ -162,7 +157,7 @@ def main(opts):
                             mask_indices_tr:mask_tr_sp['indices'][:,0:2]}
 
 
-                
+
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
 
@@ -172,12 +167,10 @@ def main(opts):
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-
             val_dict = {mat_values_tr_val:data['mat_values_tr_val'],
                         mask_indices_val:data['mask_indices_val'],
                         mask_indices_tr_val:data['mask_indices_tr_val'],
                         mask_tr_val_split:data['mask_tr_val_split']}
-
 
             bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
             loss_val_ += np.sqrt(bloss_)
@@ -187,17 +180,16 @@ def main(opts):
             print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch), flush=True)
 
 
-
 if __name__ == "__main__":
     
     opts ={'epochs': 500,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':1682,#num movies per submatrix
-           # 'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           # 'maxM':100,#num movies per submatrix
+           # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           # 'maxM':1682,#num movies per submatrix
+           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
            'encoder':[
@@ -237,7 +229,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 }
             },
-           'lr':.0001,
+           'lr':.00001,
     }
     
     main(opts)

@@ -267,7 +267,7 @@ def matrix_sparse(
         outdic = {'input':output, 'mask_indices':mask_indices, 'shape':[N,M,units]}
         return outdic
 
-                
+
 def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimensions
                         verbose=1,
                         scope=None,
