@@ -211,7 +211,7 @@ def matrix_sparse(
                 norm_M = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
                 norm_NM = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=None, keep_dims=True) + eps
 
-            if 'max' in kwargs.get('pool_mode', 'max') and mask is None:
+            if 'max' in kwargs.get('pool_mode', 'max') and mask_indices is None:
                 mat_marg_0 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=0, keep_dims=True)
                 mat_marg_1 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=None, keep_dims=True)
