@@ -166,9 +166,9 @@ if __name__ == "__main__":
             ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
-                    'activation':tf.nn.tanh,
+                    # 'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
-                    # 'activation':tf.nn.relu,
+                    'activation':tf.nn.relu,
                     'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
@@ -186,7 +186,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 },                
             },
-           'lr':.001,
+           'lr':.0001,
     }
     
     main(opts)

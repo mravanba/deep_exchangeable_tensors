@@ -50,11 +50,9 @@ def rec_loss_fn(mat, mask, rec):
     return ((tf.reduce_sum(((mat - rec)**2)*mask))/tf.reduce_sum(mask))#average l2-error over non-zero entries
 
 
-def main(opts):
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-    # path = 'movielens-TEST'
-    path = 'movielens-100k'
-    # path = 'movielens-1M'
+def main(opts):    
+    path = opts['data_path']
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)    
     data = get_data(path, train=.8, valid=.2, test=.001)
     
     #build encoder and decoder and use VAE loss
@@ -72,6 +70,9 @@ def main(opts):
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool_sparse']['pool_mode'])
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_sparse']['activation'])
+        print('use skip connections is middle layers: ', skip_connections)
+        print('number of features: ', units)
+        print('number of latent features: ', latent_features)
         print('maxN: ', opts['maxN'])
         print('maxM: ', opts['maxM'])
         print('')
@@ -127,6 +128,7 @@ def main(opts):
         total_loss = rec_loss + reg_loss
 
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
+        # train_step = tf.train.AdamOptimizer(opts['lr'], opts['adam_b1'], opts['adam_b2']).minimize(total_loss)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=True))
         # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
@@ -181,31 +183,65 @@ def main(opts):
 
 
 if __name__ == "__main__":
-    
-    opts ={'epochs': 500,#never-mind this. We have to implement look-ahead to report the best result.
+
+    # 100K dataset: .906 validation error
+    #'maxN':100
+    #'maxM':100
+    #'lr':.0001
+    # 2 layers w/ 32 units each
+    # no "add input back in" 
+
+    # 1M dataset: .??? validation error
+    #'maxN':375
+    #'maxM':375
+    #'lr':.0001
+    # 2 layers w/ 74 units each
+    # no "add input back in" 
+
+    # path = 'movielens-TEST'
+    path = 'movielens-100k'
+    # path = 'movielens-1M'
+
+    ## 100K configurations 
+    if 'movielens-100k' in path:
+        maxN = 100    
+        maxM = 100
+        skip_connections = True
+        units = 32
+        latent_features = 5
+        learning_rate = 0.0001
+
+    ## 1M Configs
+    if 'movielens-1M' in path:
+        maxN = 375
+        maxM = 375
+        skip_connections = True
+        units = 52
+        latent_features = 10
+        learning_rate = 0.00005
+
+    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
            # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            # 'maxM':1682,#num movies per submatrix
-           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':100,#num movies per submatrix
+           'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
+           'data_path':path,
            'encoder':[
-               {'type':'matrix_sparse', 'units':32},
-               # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':32},
-               # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
+               # {'type':'matrix_dropout_sparse'},
                ],
             'decoder':[
-               {'type':'matrix_sparse', 'units':32},
-               # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':32},
-               # {'type':'matrix_dropout_sparse'},
-                {'type':'matrix_sparse', 'units':1, 'activation':None},
+               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)                
                 'matrix_sparse':{
@@ -216,6 +252,7 @@ if __name__ == "__main__":
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
+                    'skip_connections':False,
                 },
                 'dense':{#not used
                     'activation':tf.nn.elu, 
@@ -229,7 +266,10 @@ if __name__ == "__main__":
                     'rate':.5,
                 }
             },
-           'lr':.00001,
+           'lr':learning_rate,
+           # 'adam_b1':.2,
+           # 'adam_b2':.7,
+           # 'adam_ep':1,
     }
     
     main(opts)

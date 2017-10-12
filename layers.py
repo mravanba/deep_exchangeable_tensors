@@ -197,6 +197,7 @@ def matrix_sparse(
         eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
         mat = inputs.get('input', None)#N x M x K
         mask_indices = inputs.get('mask_indices', None)
+        skip_connections = kwargs.get('skip_connections', False)
 
         N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
         output =  tf.convert_to_tensor(0, np.float32)
@@ -260,6 +261,9 @@ def matrix_sparse(
             else:
                 output = kwargs.get('activation')(output)
                 output = dense_tensor_to_sparse(output, mask_indices=mask_indices, shape=[N,M,units])
+
+        if skip_connections and mat is not None:
+            output = sparse_tensor_broadcast_sparse_add(output, mat, mask_indices, K)
             
         if kwargs.get('drop_mask', True):
             mask_indices = None

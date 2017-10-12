@@ -233,6 +233,14 @@ def sparse_tensor_broadcast_dense_add(x_sp, y, mask_indices, broadcast_axis=None
         return tf.SparseTensorValue(inds, vals, shape)
 
 
+def sparse_tensor_broadcast_sparse_add(x_sp, y_sp, mask_indices, units):
+    # K = shape[2]
+    # new_vals = tf.reshape(x_sp.values, [-1,units]) + tf.cast(tf.reshape(y_sp.values, [-1,units]), tf.float32)
+    # return tf.SparseTensorValue(x_sp.indices, tf.reshape(new_vals, [-1]), x_sp.dense_shape)
+    new_vals = x_sp.values + y_sp.values
+    return tf.SparseTensorValue(x_sp.indices, new_vals, x_sp.dense_shape)
+
+
 # Apply dropout to non-zero values
 def sparse_dropout(values, mask_indices, shape, rate=0.0, training=True):
     # rate = 2*rate - rate*rate # match overall dropout rate of dense version
