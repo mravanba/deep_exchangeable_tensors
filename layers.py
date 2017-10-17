@@ -40,7 +40,9 @@ def matrix_dense(
         eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
         mat = inputs.get('input', None)#N x M x K        
         mask = inputs.get('mask', None)#N x M
+        skip_connections = kwargs.get('skip_connections', False)
         output =  tf.convert_to_tensor(0, np.float32)
+
 
         if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties                
             N,M,K = mat.get_shape().as_list()
@@ -101,6 +103,10 @@ def matrix_dense(
         # else:
         #     output = mask * output
         ##.....
+
+        if skip_connections and mat is not None:
+            output = output + mat
+
         outdic = {'input':output, 'mask':mask}
         return outdic
 
@@ -226,6 +232,8 @@ def matrix_sparse(
             theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
             theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
             
+            # bias = model_variable("bias",shape=[1],trainable=True)
+            
             output = sparse_tensordot_sparse(mat, theta_0, [N,M,K], units, mask_indices=mask_indices)
             output_0 = tf.tensordot(mat_marg_0, theta_1, axes=[[2],[0]]) # 1 x M x units
             output = sparse_tensor_broadcast_dense_add(output, output_0, mask_indices, broadcast_axis=0, shape=[N,M,units])
@@ -233,6 +241,8 @@ def matrix_sparse(
             output = sparse_tensor_broadcast_dense_add(output, output_1, mask_indices, broadcast_axis=1, shape=[N,M,units])
             output_2 = tf.tensordot(mat_marg_2, theta_3, axes=[[2],[0]]) # 1 x 1 x units
             output = sparse_tensor_broadcast_dense_add(output, output_2, mask_indices, broadcast_axis=None, shape=[N,M,units])
+
+            # output = tf.SparseTensorValue(output.indices, tf.add(output.values, bias), output.dense_shape)
 
         nvec = inputs.get('nvec', None)
         mvec = inputs.get('mvec', None)

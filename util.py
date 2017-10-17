@@ -102,6 +102,16 @@ def get_data(dataset='movielens-small',
         mat_values_tr_val = dense_array_to_sparse_values(mat_tr_val[:,:,None], mask_indices_tr_val)
         mat_values_tr = dense_array_to_sparse_values(mat_tr_val[:,:,None], mask_indices_tr)
         mat_values_val = dense_array_to_sparse_values(mat_tr_val[:,:,None], mask_indices_val)
+        mat_values_ts = dense_array_to_sparse_values(mat_ts[:,:,None], mask_indices_ts)
+
+        mat_tr_val_ts = mat_tr_val + mat_ts
+        mask_indices_tr_val_ts = get_mask_indices(mask_tr_val + mask_ts)
+        mask_ts_split = np.zeros(mask_indices_tr_val_ts.shape[0])
+        for i, row in enumerate(mask_indices_tr_val_ts):
+            for row_ts in mask_indices_ts:
+                if list(row) == list(row_ts):
+                    mask_ts_split[i] = 1
+        mat_values_tr_val_ts = dense_array_to_sparse_values(mat_tr_val_ts[:,:,None], mask_indices_tr_val_ts)
 
         data = {'mat_tr_val':mat_tr_val[:,:,None],
                 'mask_tr_val':mask_tr_val[:,:,None],
@@ -112,11 +122,13 @@ def get_data(dataset='movielens-small',
                 'mat_values_tr_val':mat_values_tr_val,
                 'mat_values_tr':mat_values_tr,
                 'mat_values_val':mat_values_val,
+                'mat_values_ts':mat_values_ts,
                 'mask_indices_tr':mask_indices_tr,        
                 'mask_indices_val':mask_indices_val,
                 'mask_indices_ts':mask_indices_ts,
                 'mask_indices_tr_val':mask_indices_tr_val,
-                'mask_tr_val_split':mask_tr_val_split}
+                'mask_tr_val_split':mask_tr_val_split, 
+                'mask_ts_split':mask_ts_split}
 
         # pdb.set_trace()
         return data
@@ -159,6 +171,20 @@ def get_data(dataset='movielens-small',
         mat_values_tr_val = dense_array_to_sparse_values(mat_tr_val[:,:,None], mask_indices_tr_val)
         mat_values_tr = dense_array_to_sparse_values(mat_tr_val[:,:,None], mask_indices_tr)
         mat_values_val = dense_array_to_sparse_values(mat_tr_val[:,:,None], mask_indices_val)
+        mat_values_ts = dense_array_to_sparse_values(mat_ts[:,:,None], mask_indices_ts)
+
+        mat_tr_val_ts = mat_tr_val + mat_ts
+        mask_indices_tr_val_ts = get_mask_indices(mask_tr_val + mask_ts)
+        mat_values_tr_val_ts = dense_array_to_sparse_values(mat_tr_val_ts[:,:,None], mask_indices_tr_val_ts)
+
+        # mat_tr_val_ts = mat_tr_val + mat_ts
+        # mask_indices_tr_val_ts = get_mask_indices(mask_tr_val + mask_ts)
+        # mask_ts_split = np.zeros(mask_indices_tr_val_ts.shape[0])
+        # for i, row in enumerate(mask_indices_tr_val_ts):
+        #     for row_ts in mask_indices_ts:
+        #         if list(row) == list(row_ts):
+        #             mask_ts_split[i] = 1
+        # mat_values_tr_val_ts = dense_array_to_sparse_values(mat_tr_val_ts[:,:,None], mask_indices_tr_val_ts)
 
         data = {'mat_tr_val':mat_tr_val[:,:,None], #Dense data
                 'mask_tr_val':mask_tr_val[:,:,None],
@@ -169,13 +195,14 @@ def get_data(dataset='movielens-small',
                 'mat_values_tr_val':mat_values_tr_val, #Sparse data
                 'mat_values_tr':mat_values_tr,
                 'mat_values_val':mat_values_val,
+                'mat_values_ts':mat_values_ts,
                 'mask_indices_tr':mask_indices_tr,        
                 'mask_indices_val':mask_indices_val,
                 'mask_indices_ts':mask_indices_ts,
                 'mask_indices_tr_val':mask_indices_tr_val,
                 'mask_tr_val_split':mask_tr_val_split}
         # pdb.set_trace()
-        return data   
+        return data
 
     elif 'movielens-1M' in dataset:
         r_cols = ['user_id', None, 'movie_id', None, 'rating', None, 'unix_timestamp']
@@ -215,6 +242,17 @@ def get_data(dataset='movielens-small',
         mat_values_tr_val = dense_array_to_sparse_values(mat[:,:,None], mask_indices_tr_val)
         mat_tr_val = mat * mask_tr_val
 
+        mat_values_ts = dense_array_to_sparse_values(mat[:,:,None], mask_indices_ts)
+
+        # mat_tr_val_ts = mat_tr_val + mat_ts
+        # mask_indices_tr_val_ts = get_mask_indices(mask_tr_val + mask_ts)
+        # mask_ts_split = np.zeros(mask_indices_tr_val_ts.shape[0])
+        # for i, row in enumerate(mask_indices_tr_val_ts): ## This is SLOW!!!
+        #     for row_ts in mask_indices_ts:
+        #         if list(row) == list(row_ts):
+        #             mask_ts_split[i] = 1
+        # mat_values_tr_val_ts = dense_array_to_sparse_values(mat_tr_val_ts[:,:,None], mask_indices_tr_val_ts)
+
         data = {'mat_tr_val':mat_tr_val[:,:,None], #Dense data
                 'mask_tr':mask_tr[:,:,None],
                 'mask_val':mask_val[:,:,None],
@@ -224,10 +262,76 @@ def get_data(dataset='movielens-small',
                 'mat_values_tr':mat_values_tr, #Sparse data
                 'mat_values_val':mat_values_val,
                 'mat_values_tr_val':mat_values_tr_val,
+                'mat_values_ts':mat_values_ts,
                 'mask_indices_tr':mask_indices_tr,        
                 'mask_indices_val':mask_indices_val,
                 'mask_indices_tr_val':mask_indices_tr_val,
                 'mask_indices_ts':mask_indices_ts,                
+                'mask_tr_val_split':mask_tr_val_split}
+
+        # pdb.set_trace()
+        return data
+
+    elif 'netflix-full' in dataset:
+        r_cols = ['user_id', 'movie_id', 'rating']
+        path = os.path.join(data_folder,'netflix-full/ratings.dat')
+        ratings = pd.read_csv(path, sep='\t', names=r_cols, encoding='latin-1')
+        n_users = np.max(ratings.user_id)
+        _, movies = np.unique(ratings.movie_id, return_inverse=True)
+        n_movies = np.max(movies) + 1
+        mat = np.zeros((n_users, n_movies), dtype=np.float32)
+        mat[ratings.user_id-1, movies] = ratings.rating
+        n_ratings = ratings.rating.shape[0]
+        n_train = int(np.floor(n_ratings * train))
+        n_valid = n_train + int(np.floor(n_ratings * valid))
+        n_test = n_valid + int(np.floor(n_ratings * test))
+        rand_perm = np.random.permutation(n_ratings)
+        mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_val = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
+        mask_tr_val[ratings.user_id[rand_perm[:n_valid]]-1, movies[rand_perm[:n_valid]]] = 1
+        mask_ts[ratings.user_id[rand_perm[n_valid:n_test]]-1,movies[rand_perm[n_valid:n_test]]] = 1
+        mask_tr[ratings.user_id[rand_perm[:n_train]]-1,movies[rand_perm[:n_train]]] = 1
+        mask_val[ratings.user_id[rand_perm[n_train:n_valid]]-1,movies[rand_perm[n_train:n_valid]]] = 1
+        n_ratings_tr_val = ratings.user_id[rand_perm[:n_valid]].shape[0]
+        p_train = train / (train + valid)
+        p_valid = 1 - p_train
+        mask_tr_val_split = np.random.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
+        mask_indices_tr_val = get_mask_indices(mask_tr_val)
+        mask_indices_tr = mask_indices_tr_val[mask_tr_val_split == 0,:]
+        mask_indices_val = mask_indices_tr_val[mask_tr_val_split == 1,:]
+        mask_indices_ts = get_mask_indices(mask_ts)
+        mat_values_tr = dense_array_to_sparse_values(mat[:,:,None], mask_indices_tr)
+        mat_values_val = dense_array_to_sparse_values(mat[:,:,None], mask_indices_val)
+        mat_values_tr_val = dense_array_to_sparse_values(mat[:,:,None], mask_indices_tr_val)
+        mat_tr_val = mat * mask_tr_val
+
+        mat_values_ts = dense_array_to_sparse_values(mat[:,:,None], mask_indices_ts)
+
+        # mat_tr_val_ts = mat_tr_val + mat_ts
+        # mask_indices_tr_val_ts = get_mask_indices(mask_tr_val + mask_ts)
+        # mask_ts_split = np.zeros(mask_indices_tr_val_ts.shape[0])
+        # for i, row in enumerate(mask_indices_tr_val_ts): ## This is SLOW!!!
+        #     for row_ts in mask_indices_ts:
+        #         if list(row) == list(row_ts):
+        #             mask_ts_split[i] = 1
+        # mat_values_tr_val_ts = dense_array_to_sparse_values(mat_tr_val_ts[:,:,None], mask_indices_tr_val_ts)
+
+        data = {'mat_tr_val':mat_tr_val[:,:,None], #Dense data
+                'mask_tr':mask_tr[:,:,None],
+                'mask_val':mask_val[:,:,None],
+                'mask_tr_val':mask_tr_val[:,:,None],
+                'mask_ts':mask_ts[:,:,None],
+
+                'mat_values_tr':mat_values_tr, #Sparse data
+                'mat_values_val':mat_values_val,
+                'mat_values_tr_val':mat_values_tr_val,
+                'mat_values_ts':mat_values_ts,
+                'mask_indices_tr':mask_indices_tr,        
+                'mask_indices_val':mask_indices_val,
+                'mask_indices_tr_val':mask_indices_tr_val,
+                'mask_indices_ts':mask_indices_ts,
                 'mask_tr_val_split':mask_tr_val_split}
 
         # pdb.set_trace()

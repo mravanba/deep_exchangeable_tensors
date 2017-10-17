@@ -29,14 +29,12 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
 
 
 def rec_loss_fn(mat, mask, rec):
-    return ((tf.reduce_sum(((mat - rec)**2)*mask))/tf.reduce_sum(mask))#average l2-error over non-zero entries
+    return (tf.reduce_sum(((mat - rec)**2)*mask)) / tf.reduce_sum(mask)#average l2-error over non-zero entries
 
 
 def main(opts):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
-    # path = 'movielens-TEST'
-    path = 'movielens-100k'
-    # path = 'movielens-1M'
+    path = opts['data_path']
     data = get_data(path, train=.8, valid=.2, test=.001)
     
     #build encoder and decoder and use VAE loss
@@ -138,21 +136,55 @@ def main(opts):
 
 
 if __name__ == "__main__":
+
+    # path = 'movielens-TEST'
+    path = 'movielens-100k'
+    # path = 'movielens-1M'
+
+
+    ## TEST configurations 
+    if 'movielens-TEST' in path:
+        maxN = 5    
+        maxM = 5
+        skip_connections = True
+        units = 32
+        latent_features = 5
+        learning_rate = 0.0001
+
+    ## 100k Configs
+    if 'movielens-100k' in path:
+        maxN = 100    
+        maxM = 100
+        skip_connections = True
+        units = 32
+        latent_features = 5
+        learning_rate = 0.001
+
+    ## 1M Configs
+    if 'movielens-1M' in path:
+        maxN = 320
+        maxM = 220
+        skip_connections = True
+        units = 54
+        latent_features = 10
+        learning_rate = 0.001
+
     
-    opts ={'epochs': 500,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':1682,#num movies per submatrix
-           # 'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           # 'maxM':100,#num movies per submatrix
+           # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           # 'maxM':1682,#num movies per submatrix
+           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
+           'data_path':path,
            'encoder':[
                {'type':'matrix_dense', 'units':32},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':32},
+               {'type':'matrix_dense', 'units':32, 'skip_connections':True},
                # {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
@@ -160,11 +192,11 @@ if __name__ == "__main__":
             'decoder':[
                {'type':'matrix_dense', 'units':32},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':32},
+               {'type':'matrix_dense', 'units':32, 'skip_connections':True},
                # {'type':'matrix_dropout'},
                 {'type':'matrix_dense', 'units':1, 'activation':None},
             ],
-            'defaults':{#default values for each layer type (see layer.py)
+            'defaults':{#default values for each layer type (see layer.py)s
                 'matrix_dense':{
                     # 'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
@@ -173,6 +205,7 @@ if __name__ == "__main__":
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
+                    'skip_connections':False,
                 },
                 'dense':{#not used
                     'activation':tf.nn.elu, 
@@ -186,7 +219,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 },                
             },
-           'lr':.0001,
+           'lr':.0001,           
     }
     
     main(opts)
