@@ -8,7 +8,7 @@ import tensorflow as tf
 import layers as ly
 import pdb
 
-class Model: #constructs a series of connected layers from layers.py from the given list of dictionaries.
+class Model(object): #constructs a series of connected layers from layers.py from the given list of dictionaries.
     
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
@@ -60,7 +60,7 @@ class Model: #constructs a series of connected layers from layers.py from the gi
                     with tf.variable_scope(str(l)) as l_scope:
                         layer_params = deepcopy(layer)
                         del layer_params['type'] #because type is not used when passing layer keywords to the actual method in the layers.py module
-                        new_product = getattr(ly, layer['type'])(new_product, **layer_params, verbose=self._verbose, scope=l_scope, is_training=is_training)#get the output of the layer by calling the appropriate method in layers.py
+                        new_product = getattr(ly, layer['type'])(new_product, layer_params, verbose=self._verbose, scope=l_scope, is_training=is_training)#get the output of the layer by calling the appropriate method in layers.py
                         if verbose > 0:
                             helper.print_dims(prefix="layer "+str(l)+" ("+layer['type']+") ", **new_product)
                 else:

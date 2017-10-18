@@ -1,8 +1,14 @@
+from __future__ import print_function
+
 import tensorflow as tf
+import numpy as np
 from base import Model
-from util import *
-from sparse_util import *
+from util import get_data, to_indicator, to_number
+from sparse_util import sparse_tensordot_sparse, get_mask_indices
 import math
+import time
+from tqdm import tqdm
+
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM):
@@ -132,7 +138,7 @@ def main(opts):
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
                 min_loss_epoch = ep
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch), flush=True)
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch))
 
 
 if __name__ == "__main__":

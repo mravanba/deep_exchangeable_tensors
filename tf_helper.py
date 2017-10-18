@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, model_variable
 
@@ -17,7 +19,7 @@ def print_dims(prefix="", delimiter="\t", **kwargs):
                 else:
                     print(key,":",delimiter,end=" ")
             
-    print(flush=True)
+    print()
     
 
 

@@ -4,31 +4,28 @@ from __future__ import print_function
 
 import numpy as np
 import pandas as pd
-import itertools
 import pdb
 import sys
 import matplotlib as plt
-import scipy.ndimage.filters as filters
-from PIL import Image
-import pickle as pickle
 import os
-from fnmatch import fnmatch
-from random import shuffle
-import itertools
-import time
 from sys import stderr
 import scipy.interpolate as interpolate
-import time
-import tqdm
-from tqdm import trange
-from tqdm import tqdm
-import glob
-from copy import deepcopy
 import functools
-from sparse_util import *
+from sparse_util import dense_array_to_sparse, get_mask_indices, sparse_array_to_dense, dense_array_to_sparse_values
 
 floatX = "float32"
 data_folder = "data"
+
+def to_indicator(mat):
+    out = np.zeros((mat.shape[0], mat.shape[1], 5))
+    for i in range(1, 6):
+        out[:, :, i-1] = (1 * (mat == i)).reshape((mat.shape[0], mat.shape[1]))
+    return out
+
+def to_number(mat):
+    out = (np.argmax(mat, axis=2).reshape((mat.shape[0], mat.shape[1], 1)))
+    out[mat.sum(axis=2) > 0] += 1
+    return np.array(out, dtype=floatX)
 
 
 def get_data(dataset='movielens-small',
