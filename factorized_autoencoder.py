@@ -34,15 +34,32 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
             yield ind_n, ind_m 
 
 
-def rec_loss_fn(mat, mask, rec):
+def rec_loss_fn(mat, mask, rec, mean=0., std=1.):
     return (tf.reduce_sum(((mat - rec)**2)*mask)) / tf.reduce_sum(mask)#average l2-error over non-zero entries
+
+def masked_crossentropy(mat, mask, rec):
+    '''
+    Average crossentropy over non-zero entries
+    '''
+    return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels=mat, logits=rec) * tf.squeeze(mask) ) / tf.reduce_sum(mask)
 
 
 def main(opts):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     path = opts['data_path']
     data = get_data(path, train=.8, valid=.2, test=.001)
-    
+
+    if opts.get('normalize', False):
+        print("Normalizing data")
+        data_mean = data['mat_tr_val'].mean()
+        data_std = data['mat_tr_val'].std()
+        standardize = lambda x: (x - data_mean)/data_std
+        inverse_trans = lambda x: (x * data_std) + data_mean
+    else:
+        data_mean = 0.
+        data_std = 1.
+        standardize = lambda x: x
+        inverse_trans = lambda x: x
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_tr_val'].shape
     maxN, maxM = opts['maxN'], opts['maxM']
@@ -98,9 +115,9 @@ def main(opts):
             out_val = decoder.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#reuse it for validation
 
         #loss and training
-        rec_loss = rec_loss_fn(mat, mask_tr, out_tr)# reconstruction loss
+        rec_loss = rec_loss_fn(inverse_trans(mat), mask_tr, inverse_trans(out_tr))# reconstruction loss
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
-        rec_loss_val = rec_loss_fn(mat_val, mask_val, out_val)
+        rec_loss_val = rec_loss_fn(inverse_trans(mat_val), mask_val, inverse_trans(out_val))
         total_loss = rec_loss + reg_loss 
 
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
@@ -118,7 +135,7 @@ def main(opts):
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
-                tr_dict = {mat:data['mat_tr_val'][inds_],
+                tr_dict = {mat:standardize(data['mat_tr_val'][inds_]),
                            mask_tr:data['mask_tr'][inds_]}
 
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -129,7 +146,7 @@ def main(opts):
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-            val_dict = {mat_val:data['mat_tr_val'],
+            val_dict = {mat_val:standardize(data['mat_tr_val']),
                         mask_val:data['mask_val'],
                         mask_tr_val:data['mask_tr_val']}
         
@@ -186,6 +203,7 @@ if __name__ == "__main__":
            'maxM':100,#num movies per submatrix
            'visualize':False,
            'save':False,
+           'normalize':True,
            'data_path':path,
            'encoder':[
                {'type':'matrix_dense', 'units':32},
