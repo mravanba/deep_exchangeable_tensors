@@ -206,12 +206,35 @@ def matrix_sparse(
         skip_connections = kwargs.get('skip_connections', False)
 
         N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
+    
+        # if mat is not None:
+        #     N = mat.dense_shape[0]
+        #     M = mat.dense_shape[1]
+        #     K = mat.dense_shape[2]
+
+
+
+        nvec = inputs.get('nvec', None)
+        mvec = inputs.get('mvec', None)
+
+
+        # if nvec is not None:
+        #     N = nvec.shape[0]
+        #     K = nvec.shape[2]
+
+        # if mvec is not None:
+        #     M = mvec.shape[1]
+
         output =  tf.convert_to_tensor(0, np.float32)
 
         if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
             norm_N = np.float32(N)
             norm_M = np.float32(M)
             norm_NM = np.float32(N*M)
+            # norm_N = tf.cast(N, tf.float32)
+            # norm_M = tf.cast(M, tf.float32)
+            # norm_NM = norm_N * norm_M
+
 
             if mask_indices is not None:
                 norm_N = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=0, keep_dims=True) + eps
@@ -243,9 +266,6 @@ def matrix_sparse(
             output = sparse_tensor_broadcast_dense_add(output, output_2, mask_indices, broadcast_axis=None, shape=[N,M,units])
 
             # output = tf.SparseTensorValue(output.indices, tf.add(output.values, bias), output.dense_shape)
-
-        nvec = inputs.get('nvec', None)
-        mvec = inputs.get('mvec', None)
 
         if nvec is not None:
             theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)

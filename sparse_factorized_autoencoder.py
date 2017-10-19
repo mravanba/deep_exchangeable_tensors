@@ -32,12 +32,25 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
 
 def sample_submatrix_sp(mask_indices, N, M, maxN, maxM):
     max_val = mask_indices.shape[0]
-    num_samples = np.minimum(max_val, maxN*maxM)    
+    num_samples = np.minimum(max_val, maxN*maxM)
     for n in range(N // maxN):
         for m in range(M // maxM):
             sample = np.random.choice(max_val, size=num_samples, replace=False)
             sample = np.sort(sample)
             yield sample
+
+# def sample_submatrix_sp(mask_indices, N, M, maxN, maxM, minibatch_size):
+#     # print('mask_indices --> \n', mask_indices)
+#     num_vals = mask_indices.shape[0]
+    
+#     # for n in range(N // maxN):
+#     #     for m in range(M // maxM):
+#     #         sample = np.random.choice(max_val, size=num_samples, replace=False)
+#     #         sample = np.sort(sample)
+#     #         yield sample
+
+#     num_samples = np.maximum(num_vals // minibatch_size, 1)
+#     for i in range(num_samples):
 
 
 def rec_loss_fn_sp(mat_values, mask_indices, mask_split, rec_values):
@@ -79,7 +92,7 @@ def main(opts):
 
 
 
-    output_filename = opts['output_file'] + str(time.time())
+    output_filename = opts['output_file'] + str(time.time()).split('.')[0]
     f = open(output_filename, 'w')
     f.write('\nFactorized Autoencoder run settings:')
     f.write('dataset: ' + path + '\n')
@@ -94,6 +107,8 @@ def main(opts):
     f.write('maxN: ' + str(opts['maxN']) + '\n')
     f.write('maxM: ' + str(opts['maxM']) + '\n')
     f.write('\n')
+    output_file_pos = f.tell()
+    f.close()
 
     with tf.Graph().as_default():
         # with tf.device('/gpu:0'):
@@ -117,7 +132,7 @@ def main(opts):
         with tf.variable_scope("encoder"):
             tr_dict = {'input':mat_tr,
                        'mask_indices':mask_indices_tr,
-                       'shape':[maxN,maxM,num_features]} ## Passing in shape to be used in sparse functions
+                       'shape':[maxN,maxM,num_features]} ## Passing in shape to be used in sparse functions            
             val_dict = {'input':mat_val,
                         'mask_indices':mask_indices_tr_val,
                         'shape':[N,M,num_features]}
@@ -183,8 +198,17 @@ def main(opts):
             loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0,0,0,0
             # for sample_ in tqdm(sample_submatrix_sp(data['mask_indices_tr'], N, M, maxN, maxM), total=iters_per_epoch):# Sampling dense indices directly doesnt work right now.
 
+            #     for row in data['mask_indices_tr'][sample_]:
+            #         print(row)
+
+            #     _, X = np.unique(data['mask_indices_tr'][sample_][:,0], return_inverse=True)
+            #     _, Y = np.unique(data['mask_indices_tr'][sample_][:,1], return_inverse=True)
+            #     rescaled_indices = np.array(list(zip(X,Y)))
+            #     print('### -> \n', rescaled_indices)
+
             #     tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
-            #                 mask_indices_tr:data['mask_indices_tr'][sample_]}
+            #                 mask_indices_tr:rescaled_indices}
+
 
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
@@ -224,20 +248,26 @@ def main(opts):
             #             mask_indices_ts:data['mask_indices_ts']}
 
             # bloss_, = sess.run([rec_loss_ts], feed_dict=ts_dict)
-            # loss_ts_ += np.sqrt(bloss_)                        
+            # loss_ts_ += np.sqrt(bloss_)
 
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch, loss_ts_), flush=True)            
-            f.write("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}\n".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch, loss_ts_))
-        f.close()
+
+
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_), flush=True)            
+            f = open(output_filename, 'a')
+            f.seek(output_file_pos, 0)
+            f.write("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}\n".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))
+            output_file_pos = f.tell()
+            f.close()
 
 
 
 if __name__ == "__main__":
 
     # path = 'movielens-TEST'
-    path = 'movielens-100k'
-    # path = 'movielens-1M'
-    # path = 'netflix-full'
+    # path = 'movielens-100k'
+    path = 'movielens-1M'
+    # path = 'netflix/6m'
+    # path = 'netflix/full'
 
     ## Val loss: .891 after 270 epochs
     # if 'movielens-100k' in path:
@@ -250,8 +280,8 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 100    
-        maxM = 100
+        maxN = 4
+        maxM = 4
         skip_connections = True
         units = 32
         latent_features = 5
@@ -259,17 +289,24 @@ if __name__ == "__main__":
 
     ## 1M Configs
     if 'movielens-1M' in path:
-        maxN = 640
-        maxM = 220
+        maxN = 300
+        maxM = 200
         skip_connections = True
         units = 54
         latent_features = 10
         learning_rate = 0.001
 
+    if 'netflix/6m' in path:
+        maxN = 300
+        maxM = 300
+        skip_connections = True
+        units = 32
+        latent_features = 5
+        learning_rate = 0.001
 
-    if 'netflix-full' in path:
-        maxN = 100    
-        maxM = 100
+    if 'netflix/full' in path:
+        maxN = 300
+        maxM = 300
         skip_connections = True
         units = 32
         latent_features = 5
