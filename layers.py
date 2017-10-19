@@ -4,6 +4,7 @@ from sparse_util import sparse_tensordot_sparse, sparse_reduce, sparse_marginali
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, model_variable
 import numpy as np
+from collections import OrderedDict
 
 ##### Dense Layers: #####
 
@@ -39,6 +40,7 @@ def matrix_dense(
         mask = inputs.get('mask', None)#N x M
         skip_connections = layer_params.get('skip_connections', False)
         output =  tf.convert_to_tensor(0, np.float32)
+        outdic = {}
 
 
         if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties                
@@ -65,17 +67,33 @@ def matrix_dense(
             theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
             theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
             theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
+           
+            # adj_matrices = OrderedDict()
+            # for index in [0, 1]: # N axis = 0, M axis = 1. Using int index because it indexes the mat variable below
+            #     adj_matrix = inputs.get("adj_matrix_%s" % ["N", "M"][index], [])
+            #     outdic["adj_matrix_%s" % ["N", "M"][index]] = adj_matrix
+            #     graph_parameters = []
+            #     for i, _ in enumerate(adj_matrix):
+            #         graph_parameters.append(model_variable("graph_%s_theta_%d" % (["N", "M"][index], i),
+            #                                                shape=[K, units],
+            #                                                trainable=True))
+            #     adj_matrices[index] = (adj_matrix, graph_parameters)
 
             output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
             output.set_shape([N,M,units])#because of current tensorflow bug!!
             output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!            
+            output.set_shape([N,M,units])#because of current tensorflow bug!!
             output += tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!            
+            output.set_shape([N,M,units])#because of current tensorflow bug!!    
             output += tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!            
-              
-
+            output.set_shape([N,M,units])#because of current tensorflow bug!!
+            
+            # for k, (adj_matrix, graph_parameters) in adj_matrices.iteritems():
+            #     for g_theta, graph in zip(graph_parameters, adj_matrix):
+            #         graph_marg = tf.tensordot(graph, mat, axes=tf.convert_to_tensor([[1],[k]], dtype=np.int32))
+            #         output += tf.tensordot(graph_marg, g_theta, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
+            #         output.set_shape([N,M,units])#because of current tensorflow bug!!
+        
         nvec = inputs.get('nvec', None)
         mvec = inputs.get('mvec', None)
         if nvec is not None:
@@ -104,7 +122,7 @@ def matrix_dense(
         if skip_connections and mat is not None:
             output = output + mat
 
-        outdic = {'input':output, 'mask':mask}
+        outdic.update({'input':output, 'mask':mask})
         return outdic
 
 
