@@ -95,7 +95,7 @@ def sample_hyperparameters():
     pars['l2'] = unif([0.00001, 0.0001, 0.001, 0.01, 0.1])
     pars['dropout'] = unif([0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7])
     pars['maxN'] = unif(range(100, 2000, 200))
-    pars['maxN'] = pars['maxN']
+    pars['maxM'] = pars['maxN']
     pars['latent_pool'] = unif(["mean", "max"])
     pars['regular_pool'] = unif(["mean", "max"])
     # random number of units with second \leq the first
@@ -125,14 +125,20 @@ def get_unused():
     while rand_id in existing_ids:
         rand_id = np.random.randint(1000, 1000000)
     with open("jobs/random_jobs.log", "a") as f:
-        f.write("%d\n" % id)
+        f.write("%d\n" % rand_id)
     return rand_id	
+
+def make_logfile_if_necessary(filename):
+    if not os.path.exists(filename):
+        with open(filename, "w") as f:
+            f.write("name,train,valid\n")
 
 def run_job(id=None):
     todo = "jobs/todo/"
     done = "jobs/done/"
     inprogress = "jobs/inprogress/"
     logdir = "jobs/results/"
+    make_logfile_if_necessary("jobs/random_jobs.log")
     make_dirs_if_necessary(done)
     make_dirs_if_necessary(inprogress)
     make_dirs_if_necessary(logdir)

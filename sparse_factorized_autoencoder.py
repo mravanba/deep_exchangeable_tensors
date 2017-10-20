@@ -7,6 +7,7 @@ from sparse_util import *
 import math
 import time
 from tqdm import tqdm
+from collections import OrderedDict
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM,
@@ -137,7 +138,9 @@ def main(opts):
         
         min_loss = 5
         min_loss_epoch = 0
-	losses = {"train":[], "valid":[]}
+        losses = OrderedDict()
+        losses["train"] = []
+        losses["valid"] = []
         
         for ep in range(opts['epochs']):
             begin = time.time()
@@ -165,7 +168,7 @@ def main(opts):
             ## Validation Loss
             val_dict = {mat_values_tr_val:data['mat_values_tr_val'],
                         mask_indices_val:data['mask_indices_val'],
-                        mask_indices_tr_val:data['mask_indices_tr_val'],
+                        mask_indices_tr_val:data['mask_indices_tr'],
                         mask_tr_val_split:data['mask_tr_val_split'],
                         mat_shape_val:[N,M,1]}
 
@@ -174,10 +177,10 @@ def main(opts):
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
                 min_loss_epoch = ep
-            losses['train'].append(loss_tr)
+            losses['train'].append(loss_tr_)
             losses['valid'].append(loss_val_)
 
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_), flush=True)            
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))            
     return losses
 
 if __name__ == "__main__":

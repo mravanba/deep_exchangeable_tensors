@@ -215,17 +215,10 @@ def matrix_sparse(
                 norm_M = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
                 norm_NM = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=None, keep_dims=True) + eps
 
-<<<<<<< HEAD
             if 'max' in layer_params.get('pool_mode', 'max') and mask_indices is None:
-                mat_marg_0 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=0, keep_dims=True)
-                mat_marg_1 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=1, keep_dims=True)
-                mat_marg_2 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=None, keep_dims=True)
-=======
-            if 'max' in kwargs.get('pool_mode', 'max') and mask_indices is None:
                 mat_marg_0 = sparse_reduce(mask_indices, mat_values, mode='max', shape=[N,M,K], axis=0, keep_dims=True)
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, mode='max', shape=[N,M,K], axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, mode='max', shape=[N,M,K], axis=None, keep_dims=True)
->>>>>>> 10297212707819dd137b81dd573d52b5a75de591
             else:
                 mat_marg_0 = sparse_reduce(mask_indices, mat_values, mode='sum', shape=[N,M,K], axis=0, keep_dims=True) / norm_N
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, mode='sum', shape=[N,M,K], axis=1, keep_dims=True) / norm_M
@@ -269,20 +262,11 @@ def matrix_sparse(
             else:
                 output = output_tmp + output
             
-<<<<<<< HEAD
         if layer_params.get('activation', None) is not None:
-            if mat is not None:
-                output = sparse_apply_activation(output, layer_params.get('activation'))
+            if mat_values is not None:
+                output = layer_params.get('activation')(output)
             else:
                 output = layer_params.get('activation')(output)
-                output = dense_tensor_to_sparse(output, mask_indices=mask_indices, shape=[N,M,units])
-=======
-        if kwargs.get('activation', None) is not None:
-            if mat_values is not None:
-                output = kwargs.get('activation')(output)
-            else:
-                output = kwargs.get('activation')(output)
->>>>>>> 10297212707819dd137b81dd573d52b5a75de591
 
         if skip_connections and mat_values is not None:
             output = output + mat_values
@@ -333,15 +317,9 @@ def matrix_dropout_sparse(inputs,
                             is_training=True,
                             **kwargs
                             ):
-<<<<<<< HEAD
     rate = layer_params.get('rate', .1)
     mode = layer_params.get('mode', 'dense')
-    inp = inputs['input']
-=======
-    rate = kwargs.get('rate', .1)
-    mode = kwargs.get('mode', 'dense')
     inp_values = inputs['input']
->>>>>>> 10297212707819dd137b81dd573d52b5a75de591
     mask_indices = inputs.get('mask_indices', None)
     N,M,K = inputs['shape']
     units = inputs['units']
