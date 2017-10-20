@@ -1,10 +1,12 @@
+from __future__ import print_function
+
 import tensorflow as tf
 from base import Model
-from util import *
+from util import get_data
 from sparse_util import *
 import math
 import time
-
+from tqdm import tqdm
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM):
@@ -70,9 +72,9 @@ def main(opts):
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool_sparse']['pool_mode'])
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_sparse']['activation'])
-        print('use skip connections is middle layers: ', skip_connections)
-        print('number of features: ', units)
-        print('number of latent features: ', latent_features)
+        #print('use skip connections is middle layers: ', skip_connections)
+        #print('number of features: ', units)
+        print('number of latent features: ', opts['encoder'][-2]['units'])
         print('maxN: ', opts['maxN'])
         print('maxM: ', opts['maxM'])
         print('')
@@ -88,9 +90,9 @@ def main(opts):
     f.write('Pooling layer pool mode: ' + opts['defaults']['matrix_pool_sparse']['pool_mode'] + '\n')
     f.write('learning rate: ' + str(opts['lr']) + '\n')
     f.write('activation: ' + str(opts['defaults']['matrix_sparse']['activation']) + '\n')
-    f.write('use skip connections is middle layers: ' + str(skip_connections) + '\n')
-    f.write('number of features: ' + str(units) + '\n')
-    f.write('number of latent features: ' + str(latent_features) + '\n')
+    #f.write('use skip connections is middle layers: ' + str(skip_connections) + '\n')
+    #f.write('number of features: ' + str(units) + '\n')
+    #f.write('number of latent features: ' + str(latent_features) + '\n')
     f.write('maxN: ' + str(opts['maxN']) + '\n')
     f.write('maxM: ' + str(opts['maxM']) + '\n')
     f.write('\n')
@@ -226,7 +228,7 @@ def main(opts):
             # bloss_, = sess.run([rec_loss_ts], feed_dict=ts_dict)
             # loss_ts_ += np.sqrt(bloss_)                        
 
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch, loss_ts_), flush=True)            
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch, loss_ts_))            
             f.write("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}\n".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch, loss_ts_))
         f.close()
 

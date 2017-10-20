@@ -1,3 +1,4 @@
+from __future__ import print_function
 from util import *
 from sparse_util import *
 import tensorflow as tf
@@ -7,15 +8,10 @@ from tensorflow.contrib.framework import add_arg_scope, model_variable
 
 def matrix_dense(
         inputs,
-        #units = 100,
-        #mode = 'max', #using 'max' or averaging 'avg'
-        #activation = None,
-        #kernel_initializer = None,
-        #regularizer = None,
+        layer_params,
         reuse = None,
         scope = None,
         verbose = 1,
-        #drop_mask = True,#whether or not drop the mask for the next layer
         **kwargs
         ):
     
@@ -25,13 +21,13 @@ def matrix_dense(
     nvec = None, # N x 1 x K' features for rows
     mvec = None, # 1 x M x K'' features for cols
     '''
-    units = kwargs.get('units')
+    units = layer_params.get('units')
 
     if not scope:
         scope = "matrix_dense"
     with tf.variable_scope(scope, default_name="matrix_dense",
-                               initializer=kwargs.get('kernel_initializer', None),
-                               regularizer=kwargs.get('regularizer', None),
+                               initializer=layer_params.get('kernel_initializer', None),
+                               regularizer=layer_params.get('regularizer', None),
                                reuse=reuse,
                                ):
         #we should have the input matrix or at least one vector per dimension
@@ -40,7 +36,7 @@ def matrix_dense(
         eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
         mat = inputs.get('input', None)#N x M x K        
         mask = inputs.get('mask', None)#N x M
-        skip_connections = kwargs.get('skip_connections', False)
+        skip_connections = layer_params.get('skip_connections', False)
         output =  tf.convert_to_tensor(0, np.float32)
 
 
@@ -55,7 +51,7 @@ def matrix_dense(
                 norm_M = tf.reduce_sum(mask, axis=1, keep_dims=True) + eps# N, 1, 1
                 norm_NM = tf.reduce_sum(mask, axis=[0,1], keep_dims=True) + eps# 1, 1, 1
 
-            if 'max' in kwargs.get('pool_mode', 'max') and mask is None:
+            if 'max' in layer_params.get('pool_mode', 'max') and mask is None:
                 mat_marg_0 = tf.reduce_max(mat, axis=0, keep_dims=True)
                 mat_marg_1 = tf.reduce_max(mat, axis=1, keep_dims=True)
                 mat_marg_2 = tf.reduce_max(mat_marg_0, axis=1, keep_dims=True)
@@ -95,9 +91,9 @@ def matrix_dense(
             output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
             output = output_tmp + output
         
-        if kwargs.get('activation', None) is not None:
-            output = kwargs.get('activation')(output)
-        if kwargs.get('drop_mask', True):
+        if layer_params.get('activation', None) is not None:
+            output = layer_params.get('activation')(output)
+        if layer_params.get('drop_mask', True):
             mask = None
         ##.....
         # else:
@@ -112,12 +108,13 @@ def matrix_dense(
 
 
 def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
+                layer_params,
                 verbose=1,
                 scope=None,
                 **kwargs
                 ):
-    pool_mode = kwargs.get('pool_mode', 'max')#max or average pooling
-    mode = kwargs.get('mode', 'dense')
+    pool_mode = layer_params.get('pool_mode', 'max')#max or average pooling
+    mode = layer_params.get('mode', 'dense')
 
     eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
     with tf.variable_scope(scope, default_name="matrix_dense"):
@@ -143,13 +140,14 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
 
 
 def matrix_dropout(inputs,#dropout along both axes
+                   layer_params,
                     verbose=1,
                     scope=None,
                     is_training=True,
                     **kwargs
                     ):
-    rate = kwargs.get('rate', .1)
-    mode = kwargs.get('mode', 'dense')
+    rate = layer_params.get('rate', .1)
+    mode = layer_params.get('mode', 'dense')
     inp = inputs['input']
     mask = inputs.get('mask', None)
     N, M, K = inp.get_shape().as_list()
@@ -162,11 +160,11 @@ def matrix_dropout(inputs,#dropout along both axes
 # def dense(
 #         inputs,
 #         verbose = 1,
-#         **kwargs):
+#         **layer_params):
     
 #     inp = inputs['input']
-#     units = kwargs.get('units', 100)
-#     outp = tf.layers.dense(inp, units, **kwargs)
+#     units = layer_params.get('units', 100)
+#     outp = tf.layers.dense(inp, units, **layer_params)
 #     output = {'input':outp}
 #     return output
 
@@ -176,25 +174,20 @@ def matrix_dropout(inputs,#dropout along both axes
 
 def matrix_sparse(
         inputs,
-        #units = 100,
-        #mode = 'max', #using 'max' or averaging 'avg'
-        #activation = None,
-        #kernel_initializer = None,
-        #regularizer = None,
+        layer_params,
         reuse = None,
         scope = None,
         verbose = 1,
-        #drop_mask = True,#whether or not drop the mask for the next layer
         **kwargs
         ):
 
-    units = kwargs.get('units')    
+    units = layer_params.get('units')    
 
     if not scope:
         scope = "matrix_sparse"
     with tf.variable_scope(scope, default_name="matrix_sparse",
-                               initializer=kwargs.get('kernel_initializer', None),
-                               regularizer=kwargs.get('regularizer', None),
+                               initializer=layer_params.get('kernel_initializer', None),
+                               regularizer=layer_params.get('regularizer', None),
                                reuse=reuse,
                                ):
         #we should have the input matrix or at least one vector per dimension
@@ -203,7 +196,7 @@ def matrix_sparse(
         eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
         mat = inputs.get('input', None)#N x M x K
         mask_indices = inputs.get('mask_indices', None)
-        skip_connections = kwargs.get('skip_connections', False)
+        skip_connections = layer_params.get('skip_connections', False)
 
         N,M,K = inputs['shape'] ## Passing shape as input so that it can be known statically 
         output =  tf.convert_to_tensor(0, np.float32)
@@ -218,7 +211,7 @@ def matrix_sparse(
                 norm_M = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
                 norm_NM = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=None, keep_dims=True) + eps
 
-            if 'max' in kwargs.get('pool_mode', 'max') and mask_indices is None:
+            if 'max' in layer_params.get('pool_mode', 'max') and mask_indices is None:
                 mat_marg_0 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=0, keep_dims=True)
                 mat_marg_1 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat.values, mode='max', shape=[N,M,K], axis=None, keep_dims=True)
@@ -265,17 +258,17 @@ def matrix_sparse(
             else:
                 output = output_tmp + output
             
-        if kwargs.get('activation', None) is not None:
+        if layer_params.get('activation', None) is not None:
             if mat is not None:
-                output = sparse_apply_activation(output, kwargs.get('activation'))
+                output = sparse_apply_activation(output, layer_params.get('activation'))
             else:
-                output = kwargs.get('activation')(output)
+                output = layer_params.get('activation')(output)
                 output = dense_tensor_to_sparse(output, mask_indices=mask_indices, shape=[N,M,units])
 
         if skip_connections and mat is not None:
             output = sparse_tensor_broadcast_sparse_add(output, mat, mask_indices, K)
             
-        if kwargs.get('drop_mask', True):
+        if layer_params.get('drop_mask', True):
             mask_indices = None
 
         outdic = {'input':output, 'mask_indices':mask_indices, 'shape':[N,M,units]}
@@ -283,6 +276,7 @@ def matrix_sparse(
 
 
 def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimensions
+                        layer_params,
                         verbose=1,
                         scope=None,
                         **kwargs
@@ -290,8 +284,8 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
     inp = inputs['input']
     N,M,K = inputs['shape']
     mask_indices = inputs['mask_indices']
-    pool_mode = kwargs.get('pool_mode', 'max')#max or average pooling
-    mode = kwargs.get('mode', 'dense')
+    pool_mode = layer_params.get('pool_mode', 'max')#max or average pooling
+    mode = layer_params.get('mode', 'dense')
 
     eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
     with tf.variable_scope(scope, default_name="matrix_sparse"):
@@ -310,13 +304,14 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
         
 
 def matrix_dropout_sparse(inputs,
+                          layer_params,
                             verbose=1,
                             scope=None,
                             is_training=True,
                             **kwargs
                             ):
-    rate = kwargs.get('rate', .1)
-    mode = kwargs.get('mode', 'dense')
+    rate = layer_params.get('rate', .1)
+    mode = layer_params.get('mode', 'dense')
     inp = inputs['input']
     mask_indices = inputs.get('mask_indices', None)
     N,M,K = inputs['shape']
