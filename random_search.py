@@ -5,6 +5,7 @@ from collections import OrderedDict
 import tensorflow as tf
 import sparse_factorized_autoencoder
 import argparse
+import pandas as pd
 
 N_jobs = 5
 skip_connections = False
@@ -46,7 +47,7 @@ def populate_options(name, maxN=100, maxM=100, units_1=32, units_2=32, lr=0.0001
             {'type':'matrix_sparse', 'units':units_1, 'skip_connections':skips},
             {'type':'matrix_sparse', 'units':1, 'activation':None},
         ]
-    return {'epochs': 1,#never-mind this. We have to implement look-ahead to report the best result.
+    return {'epochs': 200,#never-mind this. We have to implement look-ahead to report the best result.
         'ckpt_folder':'checkpoints/%s' % name,
         'model_name':'sparse_ae_%s' % name,
         'verbose':2,
@@ -131,7 +132,7 @@ def get_unused():
 def make_logfile_if_necessary(filename):
     if not os.path.exists(filename):
         with open(filename, "w") as f:
-            f.write("name,train,valid\n")
+            f.write("")
 
 def run_job(id=None):
     todo = "jobs/todo/"
@@ -150,8 +151,9 @@ def run_job(id=None):
         rand_id = get_unused()
         name = "random_%07d" % rand_id
         filename = name + ".json"
-        opts = populate_options(name, **sample_hyperparameters())
-        json.dump(opts, open(todo + filename,"w"))
+        pars = sample_hyperparameters()
+        opts = populate_options(name, **pars)
+        json.dump(pars, open(todo + filename,"w"))
     os.rename(todo + filename, inprogress + filename)
     losses = sparse_factorized_autoencoder.main(opts)
     losses = pd.DataFrame(losses)
