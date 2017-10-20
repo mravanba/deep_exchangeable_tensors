@@ -144,16 +144,16 @@ if __name__ == "__main__":
 
     ## TEST configurations 
     if 'movielens-TEST' in path:
-        maxN = 5    
-        maxM = 5
+        maxN = 100  
+        maxM = 100
         skip_connections = True
         units = 32
         latent_features = 5
-        learning_rate = 0.0001
+        learning_rate = 0.001
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 100    
+        maxN = 100
         maxM = 100
         skip_connections = True
         units = 32
@@ -176,23 +176,23 @@ if __name__ == "__main__":
            'verbose':2,
            # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            # 'maxM':1682,#num movies per submatrix
-           'maxN':100,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           'maxM':100,#num movies per submatrix
+           'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
+           'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
            'data_path':path,
            'encoder':[
-               {'type':'matrix_dense', 'units':32},
+               {'type':'matrix_dense', 'units':units},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':32, 'skip_connections':True},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':True},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
-               {'type':'matrix_dense', 'units':32},
+               {'type':'matrix_dense', 'units':units},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':32, 'skip_connections':True},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':True},
                # {'type':'matrix_dropout'},
                 {'type':'matrix_dense', 'units':1, 'activation':None},
             ],
@@ -219,7 +219,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 },                
             },
-           'lr':.0001,
+           'lr':learning_rate,
     }
     
     main(opts)
