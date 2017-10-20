@@ -46,7 +46,7 @@ def populate_options(name, maxN=100, maxM=100, units_1=32, units_2=32, lr=0.0001
             {'type':'matrix_sparse', 'units':units_1, 'skip_connections':skips},
             {'type':'matrix_sparse', 'units':1, 'activation':None},
         ]
-    return {'epochs': 200,#never-mind this. We have to implement look-ahead to report the best result.
+    return {'epochs': 1,#never-mind this. We have to implement look-ahead to report the best result.
         'ckpt_folder':'checkpoints/%s' % name,
         'model_name':'sparse_ae_%s' % name,
         'verbose':2,
@@ -119,23 +119,40 @@ def generate_jobs(n=1):
         with open(job_name, "w") as f:
             json.dump(sample_hyperparameters(), f)
 
+def get_unused():
+    rand_id = np.random.randint(1000, 1000000)
+    existing_ids = [int(i) for i in open("jobs/random_jobs.log").readlines()]
+    while rand_id in existing_ids:
+        rand_id = np.random.randint(1000, 1000000)
+    with open("jobs/random_jobs.log", "a") as f:
+        f.write("%d\n" % id)
+    return rand_id	
+
 def run_job(id=None):
     todo = "jobs/todo/"
     done = "jobs/done/"
     inprogress = "jobs/inprogress/"
+    logdir = "jobs/results/"
     make_dirs_if_necessary(done)
     make_dirs_if_necessary(inprogress)
+    make_dirs_if_necessary(logdir)
     if id is not None:
         name = "hyperparameters_%d" % id
         filename = name + ".json"
         opts = populate_options(name, **json.load(open(todo + filename)))
     else:
-        name = "random_%d" % np.random.randint(1000, 1000000)
+        rand_id = get_unused()
+        name = "random_%07d" % rand_id
         filename = name + ".json"
         opts = populate_options(name, **sample_hyperparameters())
         json.dump(opts, open(todo + filename,"w"))
     os.rename(todo + filename, inprogress + filename)
-    sparse_factorized_autoencoder.main(opts)
+    losses = sparse_factorized_autoencoder.main(opts)
+    losses = pd.DataFrame(losses)
+    losses.to_csv(logdir + name + ".csv", index=False)
+    best = name + "," + ",".join([str(i) for i in np.array(losses)[-1, :]]) + "\n"
+    with open(logdir+"best.csv", "a") as f:
+        f.write(best)
     os.rename(inprogress + filename, done + filename)
 
 
@@ -145,6 +162,8 @@ def main():
         generate_jobs(args.gen)
     if args.id >= 0:
         run_job(args.id)
+    else:
+        run_job()
 
 if __name__ == '__main__':
     main()

@@ -21,7 +21,9 @@ def get_data(dataset='movielens-small',
                  train=.8,
                  test=.1,
                  valid=.1,
+                 seed=1234
                  ):
+    rng = np.random.RandomState(seed)
     
     if 'movielens-small' in dataset:
         path = os.path.join(data_folder,'ml-latest-small/ratings.csv')
@@ -38,7 +40,7 @@ def get_data(dataset='movielens-small',
             n_train = int(np.floor(n_ratings * train))
             n_test = n_train + int(np.floor(n_ratings * test))
             n_valid = n_test + int(np.floor(n_ratings * valid))                        
-            rand_perm = np.random.permutation(n_ratings)
+            rand_perm = rng.permutation(n_ratings)
             mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
             mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
             mask_val = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -68,7 +70,7 @@ def get_data(dataset='movielens-small',
         mat_tr_val[ratings_tr_val.user_id-1, movies_tr] = ratings_tr_val.rating
         mat_ts = np.zeros((n_users, n_movies), dtype=np.float32)
         mat_ts[ratings_ts.user_id-1, movies_ts] = ratings_ts.rating
-        rand_perm = np.random.permutation(n_ratings_tr_val)
+        rand_perm = rng.permutation(n_ratings_tr_val)
         n_train = int(n_ratings_tr_val * train)
         n_valid = n_ratings_tr_val - n_train
         mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -76,7 +78,7 @@ def get_data(dataset='movielens-small',
         mask_indices_tr_val = get_mask_indices(mask_tr_val)
         p_train = train / (train + valid)
         p_valid = 1 - p_train
-        mask_tr_val_split = np.random.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
+        mask_tr_val_split = rng.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
         mask_indices_tr = mask_indices_tr_val[mask_tr_val_split == 0,:]
         mask_indices_val = mask_indices_tr_val[mask_tr_val_split == 1,:]
         mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -137,7 +139,7 @@ def get_data(dataset='movielens-small',
         mat_tr_val[ratings_tr_val.user_id-1, movies_tr] = ratings_tr_val.rating
         mat_ts = np.zeros((n_users, n_movies), dtype=np.float32)
         mat_ts[ratings_ts.user_id-1, movies_ts] = ratings_ts.rating
-        rand_perm = np.random.permutation(n_ratings_tr_val)
+        rand_perm = rng.permutation(n_ratings_tr_val)
         n_train = int(n_ratings_tr_val * train)
         n_valid = n_ratings_tr_val - n_train
         mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -145,7 +147,7 @@ def get_data(dataset='movielens-small',
         mask_indices_tr_val = get_mask_indices(mask_tr_val)
         p_train = train / (train + valid)
         p_valid = 1 - p_train
-        mask_tr_val_split = np.random.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
+        mask_tr_val_split = rng.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
         mask_indices_tr = mask_indices_tr_val[mask_tr_val_split == 0,:]
         mask_indices_val = mask_indices_tr_val[mask_tr_val_split == 1,:]
         mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -205,7 +207,7 @@ def get_data(dataset='movielens-small',
         n_train = int(np.floor(n_ratings * train))
         n_valid = n_train + int(np.floor(n_ratings * valid))
         n_test = n_valid + int(np.floor(n_ratings * test))
-        rand_perm = np.random.permutation(n_ratings)
+        rand_perm = rng.permutation(n_ratings)
         mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
         mask_val = np.zeros((n_users, n_movies), dtype=np.float32)
         mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -217,7 +219,7 @@ def get_data(dataset='movielens-small',
         n_ratings_tr_val = ratings.user_id[rand_perm[:n_valid]].shape[0]
         p_train = train / (train + valid)
         p_valid = 1 - p_train
-        mask_tr_val_split = np.random.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
+        mask_tr_val_split = rng.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
         mask_indices_tr_val = get_mask_indices(mask_tr_val)
         mask_indices_tr = mask_indices_tr_val[mask_tr_val_split == 0,:]
         mask_indices_val = mask_indices_tr_val[mask_tr_val_split == 1,:]
@@ -284,7 +286,7 @@ def get_data(dataset='movielens-small',
         n_train = int(np.floor(n_ratings * train))
         n_valid = n_train + int(np.floor(n_ratings * valid))
         n_test = n_valid + int(np.floor(n_ratings * test))
-        rand_perm = np.random.permutation(n_ratings)
+        rand_perm = rng.permutation(n_ratings)
         mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
         mask_val = np.zeros((n_users, n_movies), dtype=np.float32)
         mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
@@ -302,7 +304,7 @@ def get_data(dataset='movielens-small',
 
         print("     sparse masks ...")
 
-        mask_tr_val_split = np.random.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
+        mask_tr_val_split = rng.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
         mask_indices_tr_val = get_mask_indices(mask_tr_val)
         mask_indices_tr = mask_indices_tr_val[mask_tr_val_split == 0,:]
         mask_indices_val = mask_indices_tr_val[mask_tr_val_split == 1,:]

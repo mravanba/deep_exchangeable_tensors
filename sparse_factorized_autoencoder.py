@@ -57,7 +57,7 @@ def rec_loss_fn_sp(mat_values, mask_indices, mask_split, rec_values):
 def main(opts):        
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)    
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.2, test=.001)
+    data = get_data(path, train=.8, valid=.1, test=.1)
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_tr_val'].shape
@@ -74,21 +74,16 @@ def main(opts):
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool_sparse']['pool_mode'])
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_sparse']['activation'])
-        #print('use skip connections is middle layers: ', skip_connections)
-        #print('number of features: ', units)
         print('number of latent features: ', opts['encoder'][-2]['units'])
         print('maxN: ', opts['maxN'])
         print('maxM: ', opts['maxM'])
         print('')
 
     with tf.Graph().as_default():
-        # with tf.device('/gpu:0'):
-
         mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
         mask_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr')
         mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
 
-        # mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
         mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
         mat_values_tr_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr_val')
         mask_indices_tr_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr_val')
@@ -96,31 +91,19 @@ def main(opts):
 
         mask_tr_val_split = tf.placeholder(tf.int64, shape=[None], name='mask_tr_val_split')
 
-        # mat_values_ts = tf.placeholder(tf.float32, shape=[None], name='mat_values_ts')
-        # mask_indices_ts = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_ts')
-
         with tf.variable_scope("encoder"):
             tr_dict = {'input':mat_values_tr,
                        'mask_indices':mask_indices_tr,
                        'shape':mat_shape_tr,
                        'units':1}
-                       # 'shape':[maxN,maxM,num_features]} ## Passing in shape to be used in sparse functions            
             val_dict = {'input':mat_values_tr_val,
                         'mask_indices':mask_indices_tr_val,
                         'shape':mat_shape_val,
                         'units':1}
-                        # 'shape':[N,M,num_features]}
-
-            # ts_dict = {'input':mat_ts,
-            #             'mask_indices':mask_indices_ts,
-            #             'shape':[N,M,num_features]}
-
             encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
             out_enc_tr = encoder.get_output(tr_dict) #build the encoder
             out_enc_val = encoder.get_output(val_dict, reuse=True, verbose=0, is_training=False)#get encoder output, reusing the neural net
 
-            # out_enc_ts = encoder.get_output(ts_dict, reuse=True, verbose=0, is_training=False)
-            
         with tf.variable_scope("decoder"):
             tr_dict = {'nvec':out_enc_tr['nvec'],
                        'mvec':out_enc_tr['mvec'],
@@ -133,11 +116,6 @@ def main(opts):
                         'shape':out_enc_val['shape'],
                         'units':out_enc_val['units']}
 
-            # ts_dict = {'nvec':out_enc_ts['nvec'],
-            #             'mvec':out_enc_ts['mvec'],
-            #             'mask_indices':out_enc_ts['mask_indices'],
-            #             'shape':[N,M,out_enc_ts['shape'][2]]}
-
             decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
             out_dec_tr = decoder.get_output(tr_dict)#build it
             out_tr = out_dec_tr['input']
@@ -145,33 +123,21 @@ def main(opts):
             out_dec_val = decoder.get_output(val_dict, reuse=True, verbose=0, is_training=False)#reuse it for validation
             out_val = out_dec_val['input']
 
-            # out_dec_ts = decoder.get_output(ts_dict, reuse=True, verbose=0, is_training=False)
-            # out_ts = out_dec_ts['input']
-
         #loss and training
         rec_loss = rec_loss_fn_sp(mat_values_tr, mask_indices_tr, tf.ones_like(mat_values_tr, dtype=tf.float32), out_tr)
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
         rec_loss_val = rec_loss_fn_sp(mat_values_tr_val, mask_indices_val, mask_tr_val_split, out_val)
         total_loss = rec_loss + reg_loss
 
-        # rec_loss_ts = rec_loss_fn_sp(mat_values_ts, mask_indices_ts, tf.ones_like(mat_values_ts, dtype=tf.float32), out_ts.values)
-
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
-        # train_step = tf.train.AdamOptimizer(opts['lr'], opts['adam_b1'], opts['adam_b2']).minimize(total_loss)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-        # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=True))
-        # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
-        # sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True, log_device_placement=True))
         sess.run(tf.global_variables_initializer())
 
         iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
         
-        # minibatch_size = opts['minibatch_size']
-        # minibatch_size = data['mask_indices_tr'].shape[0]
-        # iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
-
         min_loss = 5
         min_loss_epoch = 0
+	losses = {"train":[], "valid":[]}
         
         for ep in range(opts['epochs']):
             begin = time.time()
@@ -184,34 +150,9 @@ def main(opts):
                 mat_sp = dense_array_to_sparse(mat_sp)
                 mask_tr_sp = dense_array_to_sparse(data['mask_tr'][inds_])
                 
-                # print("## -> mat_sp['values'].shape", mat_sp['values'].shape)
-                # print("## -> mask_tr_sp['indices'][:,0:2].shape", mask_tr_sp['indices'][:,0:2].shape)
-                # print("## -> iters_per_epoch", iters_per_epoch)
-                # print("## -> maxN, maxM", maxN, ", ", maxM)
-
                 tr_dict = {mat_values_tr:mat_sp['values'],
                             mask_indices_tr:mask_tr_sp['indices'][:,0:2],
                             mat_shape_tr:[maxN,maxM,1]}
-
-
-            # for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):# Sampling dense indices directly doesnt work right now.
-
-            #     _, X = np.unique(data['mask_indices_tr'][sample_][:,0], return_inverse=True)
-            #     _, Y = np.unique(data['mask_indices_tr'][sample_][:,1], return_inverse=True)
-            #     rescaled_indices = np.array(list(zip(X,Y)))
-
-            #     NN = rescaled_indices[minibatch_size-1,0]
-            #     MM = np.max(rescaled_indices[:,1])
-                
-            #     # print("## -> data['mat_values_tr'][sample_].shape", data['mat_values_tr'][sample_].shape)
-            #     # print("## -> rescaled_indices.shape", rescaled_indices.shape)
-            #     # print("## -> iters_per_epoch", iters_per_epoch)
-            #     # print("## -> NN, MM", NN, ", ", MM)
-
-            #     tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
-            #                 mask_indices_tr:rescaled_indices,
-            #                 mat_shape_tr:[NN+1,MM+1,1]}
-
 
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -233,23 +174,11 @@ def main(opts):
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
                 min_loss_epoch = ep
-
-            # ## Test Loss
-            # ts_dict = {mat_values_ts:data['mat_values_ts'],
-            #             mask_indices_ts:data['mask_indices_ts']}
-
-            # bloss_, = sess.run([rec_loss_ts], feed_dict=ts_dict)
-            # loss_ts_ += np.sqrt(bloss_)
-
+            losses['train'].append(loss_tr)
+            losses['valid'].append(loss_val_)
 
             print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_), flush=True)            
-            # f = open(output_filename, 'a')
-            # f.seek(output_file_pos, 0)
-            # f.write("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}\n".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))
-            # output_file_pos = f.tell()
-            # f.close()
-
-
+    return losses
 
 if __name__ == "__main__":
 
