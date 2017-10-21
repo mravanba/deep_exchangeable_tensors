@@ -135,7 +135,6 @@ def sparse_reduce(mask_indices, values, mode, shape, axis=None, keep_dims=False)
     elif axis is 1:
         inds = tf.cast(mask_indices[:,0], dtype=tf.int32)   
         vals = tf.reshape(values, shape=[-1,K])
-        # vals = tf.gather(vals, mask_meta_indices)
         out = op(vals, inds, num_segments=N)
         if 'max' in mode: ## Hack to avoid tensorflow bug where 0 values are set to large negative number
             out = tf.where(tf.greater(out, -200000000), out, tf.zeros_like(out))
@@ -183,26 +182,12 @@ def sparse_marginalize_mask(mask_indices, shape, axis=None, keep_dims=True):
     else:
         print('\nERROR - unknown <axis> in sparse_marginalize_mask()\n')
 
-    
-
-# def sparse_apply_activation(x_sp, activation):
-#     return tf.SparseTensorValue(x_sp.indices, activation(x_sp.values), x_sp.dense_shape)
 
 
 ## Like tf.tensordot but with sparse inputs and outputs. Output has non-zero value only where input has non-zero value 
-def sparse_tensordot_sparse(tensor_values, param, num_features):
-    # N,M,K = in_shape
-    # num_vals = tf.shape(tensor_sp.indices)[0]
-    # num_vals = tf.shape(mask_indices)[0] * K
-    # num_unique = tf.cast(tf.divide(num_vals, K), dtype=tf.int32)
-    # inds_exp = tf.reshape(tf.tile(tf.range(units, dtype=tf.float32), multiples=tf.stack([num_unique])), [-1,1])    
-    # inds = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
-    # inds = tf.reshape(tf.tile(inds, [1,units]), [-1,2])
-    # inds = tf.concat((inds, inds_exp), axis=1)
-    # inds = tf.cast(inds, dtype=tf.int32)
+def sparse_tensordot_sparse(tensor_values, param, num_features):    
     vals = tf.matmul(tf.reshape(tensor_values, shape=[-1,num_features]), param)
     vals = tf.reshape(vals, shape=[-1])
-    # return tf.SparseTensorValue(inds, vals, [N,M,units])
     return vals
 
 
@@ -238,13 +223,6 @@ def sparse_tensor_broadcast_dense_add(x_values, y, mask_indices, num_features, b
         vals = tf.reshape(tf.add(vals, y), shape=[-1])
         # return tf.SparseTensorValue(inds, vals, shape)
     return vals
-
-# def sparse_tensor_broadcast_sparse_add(x_sp, y_sp, mask_indices, units):
-    # K = shape[2]
-    # new_vals = tf.reshape(x_sp.values, [-1,units]) + tf.cast(tf.reshape(y_sp.values, [-1,units]), tf.float32)
-    # return tf.SparseTensorValue(x_sp.indices, tf.reshape(new_vals, [-1]), x_sp.dense_shape)
-    # new_vals = x_sp.values + y_sp.values
-    # return tf.SparseTensorValue(x_sp.indices, new_vals, x_sp.dense_shape)
 
 
 # Apply dropout to non-zero values

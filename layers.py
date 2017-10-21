@@ -213,14 +213,9 @@ def matrix_sparse(
         output =  tf.convert_to_tensor(0, np.float32)
 
         if mat_values is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
-            norm_N = tf.cast(N, tf.float32)
-            norm_M = tf.cast(M, tf.float32)
-            norm_NM = norm_N * norm_M
-
-            if mask_indices is not None:
-                norm_N = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=0, keep_dims=True) + eps
-                norm_M = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
-                norm_NM = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=None, keep_dims=True) + eps
+            norm_N = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=0, keep_dims=True) + eps
+            norm_M = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=1, keep_dims=True) + eps
+            norm_NM = sparse_marginalize_mask(mask_indices, shape=[N,M,K], axis=None, keep_dims=True) + eps
 
             if 'max' in kwargs.get('pool_mode', 'max') and mask_indices is None:
                 mat_marg_0 = sparse_reduce(mask_indices, mat_values, mode='max', shape=[N,M,K], axis=0, keep_dims=True)
@@ -256,8 +251,9 @@ def matrix_sparse(
             output_tmp = tf.tensordot(nvec, theta_4, axes=[[2],[0]])# N x 1 x units
             # output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
             if mat_values is not None:
-                output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, broadcast_axis=1, shape=[N,M,units])           
+                output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=1)
             else:
+                # output = output_tmp
                 output = output_tmp + output
 
         if mvec is not None:
@@ -265,14 +261,13 @@ def matrix_sparse(
             output_tmp = tf.tensordot(mvec, theta_5, axes=[[2],[0]])# 1 x M x units
             # output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
             if mat_values is not None:
-                output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, broadcast_axis=0, shape=[N,M,units])
+                output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=0)
             else:
-                output = output_tmp + output
+                # output = dense_tensor_to_sparse_values(output, mask_indices, units)
+                # output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=0)
+                output = output + output_tmp
             
         if kwargs.get('activation', None) is not None:
-            if mat_values is not None:
-                output = kwargs.get('activation')(output)
-            else:
                 output = kwargs.get('activation')(output)
 
         if skip_connections and mat_values is not None:
@@ -280,9 +275,6 @@ def matrix_sparse(
 
         if mat_values is None:
             output = dense_tensor_to_sparse_values(output, mask_indices, units)
-            
-        if kwargs.get('drop_mask', True):
-            mask_indices = None
 
         outdic = {'input':output, 'mask_indices':mask_indices, 'shape':[N,M,units], 'units':units}
         return outdic

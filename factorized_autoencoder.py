@@ -125,7 +125,7 @@ def main(opts):
 
             val_dict = {mat_val:data['mat_tr_val'],
                         mask_val:data['mask_val'],
-                        mask_tr_val:data['mask_tr_val']}
+                        mask_tr_val:data['mask_tr']}
         
             bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
             loss_val_ += np.sqrt(bloss_)
@@ -153,8 +153,8 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 100
-        maxM = 100
+        maxN = 943
+        maxM = 1682
         skip_connections = True
         units = 32
         latent_features = 5
@@ -183,17 +183,17 @@ if __name__ == "__main__":
            'data_path':path,
            'encoder':[
                {'type':'matrix_dense', 'units':units},
-               # {'type':'matrix_dropout'},
+               {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':units, 'skip_connections':True},
-               # {'type':'matrix_dropout'},
+               {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
                {'type':'matrix_dense', 'units':units},
-               # {'type':'matrix_dropout'},
+               {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':units, 'skip_connections':True},
-               # {'type':'matrix_dropout'},
+               {'type':'matrix_dropout'},
                 {'type':'matrix_dense', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)s
@@ -216,7 +216,7 @@ if __name__ == "__main__":
                     'pool_mode':'max',
                 },
                 'matrix_dropout':{
-                    'rate':.5,
+                    'rate':.2,
                 },                
             },
            'lr':learning_rate,
