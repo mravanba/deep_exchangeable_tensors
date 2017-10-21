@@ -1,0 +1,5 @@
+*.pyc
+logs/
+jobs/done
+jobs/inprogress
+jobs/todo

@@ -1,10 +1,13 @@
+from __future__ import print_function
+
 import tensorflow as tf
 from base import Model
-from util import *
+from util import get_data
 from sparse_util import *
 import math
 import time
-
+from tqdm import tqdm
+from collections import OrderedDict
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM,
@@ -52,7 +55,7 @@ def rec_loss_fn_sp(mat_values, mask_indices, rec_values):
 def main(opts):        
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)    
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.2, test=.001)
+    data = get_data(path, train=.8, valid=.1, test=.1)
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_tr_val'].shape
@@ -68,17 +71,12 @@ def main(opts):
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool_sparse']['pool_mode'])
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_sparse']['activation'])
-        print('use skip connections is middle layers: ', skip_connections)
-        print('number of features: ', units)
-        print('number of latent features: ', latent_features)
+        print('number of latent features: ', opts['encoder'][-2]['units'])
         print('maxN: ', opts['maxN'])
         print('maxM: ', opts['maxM'])
         print('')
 
-
     with tf.Graph().as_default():
-        # with tf.device('/gpu:0'):
-
         mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
         mask_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr')
         mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
@@ -86,12 +84,13 @@ def main(opts):
         mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
         mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
         mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
-        
+
         with tf.variable_scope("encoder"):
             tr_dict = {'input':mat_values_tr,
                        'mask_indices':mask_indices_tr,
                        'shape':mat_shape_tr,
                        'units':1}
+
             val_dict = {'input':mat_values_tr,
                         'mask_indices':mask_indices_tr,
                         'shape':mat_shape_tr,
@@ -126,19 +125,17 @@ def main(opts):
         rec_loss_val = rec_loss_fn_sp(mat_values_val, mask_indices_val, out_val)
         total_loss = rec_loss + reg_loss
 
-
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         sess.run(tf.global_variables_initializer())
 
         iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
         
-        # minibatch_size = opts['minibatch_size']
-        # minibatch_size = data['mask_indices_tr'].shape[0]
-        # iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
-
         min_loss = 5
         min_loss_epoch = 0
+        losses = OrderedDict()
+        losses["train"] = []
+        losses["valid"] = []
         
         for ep in range(opts['epochs']):
             begin = time.time()
@@ -154,7 +151,6 @@ def main(opts):
                 tr_dict = {mat_values_tr:mat_sp['values'],
                             mask_indices_tr:mask_tr_sp['indices'][:,0:2],
                             mat_shape_tr:[maxN,maxM,1]}
-
 
             # for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):# Sampling dense indices directly doesnt work right now.
 
@@ -190,7 +186,6 @@ def main(opts):
                         mat_values_val:data['mat_values_val'],
                         mask_indices_val:data['mask_indices_val']}
 
-
             bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
 
 
@@ -198,9 +193,11 @@ def main(opts):
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
                 min_loss_epoch = ep
+            losses['train'].append(loss_tr_)
+            losses['valid'].append(loss_val_)
 
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_), flush=True)            
-
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))            
+    return losses
 
 if __name__ == "__main__":
 
