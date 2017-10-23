@@ -3,6 +3,7 @@ from util import *
 from sparse_util import *
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, model_variable
+from tf_helper import variable_summaries
 
 ##### Dense Layers: #####
 
@@ -38,7 +39,7 @@ def matrix_dense(
         mask = inputs.get('mask', None)#N x M
         skip_connections = layer_params.get('skip_connections', False)
         output =  tf.convert_to_tensor(0, np.float32)
-
+        config_string = "Using the following terms: "
 
         if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties                
             N,M,K = mat.get_shape().as_list()
@@ -60,37 +61,61 @@ def matrix_dense(
                 mat_marg_1 = tf.reduce_sum(mat, axis=1, keep_dims=True)/norm_M # N x 1 x K
                 mat_marg_2 = tf.reduce_sum(mat_marg_0, axis=1, keep_dims=True)/norm_NM # 1 x 1 x K
 
-            theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
-            theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
-            theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
-            theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
+            if layer_params.get('theta_0', True):
+                config_string += "theta 0, "
+                theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
+                output = tf.tensordot(mat, theta_0 * 0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
+                output.set_shape([N,M,units])#because of current tensorflow bug!!
+            
+            if layer_params.get('theta_1', True):
+                config_string += "theta 1, "
+                theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
+                output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
+                output.set_shape([N,M,units])#because of current tensorflow bug!! 
 
-            output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!
-            output += tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!            
-            output += tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!            
-            output += tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
-            output.set_shape([N,M,units])#because of current tensorflow bug!!            
+            if layer_params.get('theta_2', True):  
+                config_string += "theta 2, "     
+                theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)   
+                output += tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
+                output.set_shape([N,M,units])#because of current tensorflow bug!!  
+
+            if layer_params.get('theta_3', True):
+                config_string += "theta 3, "
+                theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)          
+                output += tf.tensordot(mat_marg_2, theta_3 * 0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
+                output.set_shape([N,M,units])#because of current tensorflow bug!!            
               
 
         nvec = inputs.get('nvec', None)
         mvec = inputs.get('mvec', None)
-        if nvec is not None:
-            N,_,K = nvec.get_shape().as_list()
-            theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)
-            output_tmp = tf.tensordot(nvec, theta_4, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# N x 1 x units
-            output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
-            output = output_tmp + output
-
-        if mvec is not None:
-            _,M,K = mvec.get_shape().as_list()
-            theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
-            output_tmp = tf.tensordot(mvec, theta_5, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# 1 x M x units
-            output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
-            output = output_tmp + output
         
+        if layer_params.get('bilinear', False):
+            if nvec is not None:
+                config_string += "bilinear, "
+                _,_,K = nvec.get_shape().as_list()
+                theta_6 = model_variable("theta_6", shape=[K, K, units], trainable=True)
+                output_n = tf.reduce_sum(nvec[:,:,:,None,None] * theta_6[None, None, :, :, :], axis=2)
+                output_m = tf.reduce_sum(output_n * mvec[:, :, :, None], axis=2)
+                output += output_m
+
+        if layer_params.get('theta_4', True):
+            if nvec is not None:
+                config_string += "theta 4, "
+                N,_,K = nvec.get_shape().as_list()
+                theta_4 = model_variable("theta_4",shape=[K, units],trainable=True)
+                output_tmp = tf.tensordot(nvec, theta_4, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# N x 1 x units
+                output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
+                output = output_tmp + output
+
+        if layer_params.get('theta_5', True):
+            if mvec is not None:
+                config_string += "theta 5, "
+                _,M,K = mvec.get_shape().as_list()
+                theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
+                output_tmp = tf.tensordot(mvec, theta_5, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32))# 1 x M x units
+                output_tmp.set_shape([1,M,units])#because of current tensorflow bug!!
+                output = output_tmp + output
+
         if layer_params.get('activation', None) is not None:
             output = layer_params.get('activation')(output)
         if layer_params.get('drop_mask', True):
@@ -101,8 +126,10 @@ def matrix_dense(
         ##.....
 
         if skip_connections and mat is not None:
+            config_string += "with skip connections"
             output = output + mat
 
+        print(config_string)
         outdic = {'input':output, 'mask':mask}
         return outdic
 
@@ -238,7 +265,7 @@ def matrix_sparse(
 
         nvec = inputs.get('nvec', None)
         mvec = inputs.get('mvec', None)
-
+        
         if nvec is not None:
             theta_4 = model_variable("theta_4",shape=[K,units],trainable=True)
             output_tmp = tf.tensordot(nvec, theta_4, axes=[[2],[0]])# N x 1 x units
@@ -259,7 +286,18 @@ def matrix_sparse(
                 # output = dense_tensor_to_sparse_values(output, mask_indices, units)
                 # output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=0)
                 output = output + output_tmp
-            
+
+        if layer_params.get("individual_bias", False):
+            # for testing my individual bias idea - I don't think it is helpful
+            print("Using individual bias in scope %s" % tf.contrib.framework.get_name_scope(), kwargs["sizes"])
+            row_bias = model_variable("row_bias",shape=[kwargs["sizes"][0]],trainable=True)
+            column_bias = model_variable("column_bias",shape=[kwargs["sizes"][1]],trainable=True)
+            #mask_indices = tf.cast(mask_indices, dtype=tf.float32) 
+            r_bias = tf.reshape(tf.gather(column_bias, inputs['col']), (1, -1, 1))
+            c_bias = tf.reshape(tf.gather(row_bias, inputs['row']), (-1, 1, 1))
+            output += r_bias - tf.reduce_mean(r_bias)
+            output += c_bias - tf.reduce_mean(c_bias)    
+        
         if kwargs.get('activation', None) is not None:
                 output = kwargs.get('activation')(output)
 
