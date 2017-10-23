@@ -1,8 +1,38 @@
+from __future__ import print_function
+
 import tensorflow as tf
+import numpy as np
 from base import Model
-from util import *
-from sparse_util import *
+from util import get_data, to_indicator, to_number
+from sparse_util import sparse_tensordot_sparse, get_mask_indices
 import math
+import time
+from tqdm import tqdm
+
+def masked_crossentropy(mat, mask, rec):
+    '''
+    Average crossentropy over non-zero entries
+    '''
+    return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels=mat, logits=rec) * tf.squeeze(mask) ) / tf.reduce_sum(mask)
+
+def normalize(data):
+    data_mean = data.mean()
+    data_std = data.std()
+    standardize = lambda x: (x - data_mean)/data_std
+    inverse_trans = lambda x: (x * data_std) + data_mean
+    return standardize, inverse_trans
+
+def get_loss_function(loss="mse"):
+    if loss == "ce":
+        return masked_crossentropy
+    elif loss == "mse":
+        return rec_loss_fn
+    else:
+        raise ValueError("Unrecognized loss: %s" % loss)
+
+def expected_value(probs):
+    print(probs.sum(axis=2).min(), probs.sum(axis=2).max(), probs.max(), probs.min())
+    return np.dot(probs, np.arange(1,6).reshape((5,1)))
 
 def sample_submatrix(mask_,#mask, used for getting concentrations
                      maxN, maxM):
@@ -37,8 +67,21 @@ def main(opts):
     path = opts['data_path']
     data = get_data(path, train=.8, valid=.2, test=.001)
     
+    standardize = inverse_trans = lambda x: x # defaults
+    if opts.get("loss", "mse") == "mse":
+        input_data = data['mat_tr_val']
+        raw_input_data = data['mat_tr_val'].copy()
+        if opts.get('normalize', False):
+            print("Normalizing data")
+            standardize, inverse_trans = normalize(input_data)
+    else:
+        raw_input_data = data['mat_tr_val'].copy()
+        input_data = to_indicator(data['mat_tr_val'])
+
+    loss_fn = get_loss_function(opts.get("loss", "mse"))
     #build encoder and decoder and use VAE loss
-    N, M, num_features = data['mat_tr_val'].shape
+    N, M, num_features = input_data.shape
+    opts['decoder'][-1]['units'] = num_features
     maxN, maxM = opts['maxN'], opts['maxM']
 
     if N < maxN: maxN = N
@@ -58,10 +101,14 @@ def main(opts):
         
 
     with tf.Graph().as_default():
+        mat_raw = tf.placeholder(tf.float32, shape=(maxN, maxM, 1), name='mat_raw')#data matrix for training
+        mat_raw_valid = tf.placeholder(tf.float32, shape=(N, M, 1), name='mat_raw_valid')#data matrix for training
 
         mat = tf.placeholder(tf.float32, shape=(maxN, maxM, num_features), name='mat')#data matrix for training
         mask_tr = tf.placeholder(tf.float32, shape=(maxN, maxM, 1), name='mask_tr')
-        #for validation, since we need less memory (forward pass only), we are feeding the whole matrix. This is only feasible for this smaller dataset. In the long term we could perform validation on CPU to avoid memory problems
+        # For validation, since we need less memory (forward pass only), 
+        # we are feeding the whole matrix. This is only feasible for this smaller dataset. 
+        # In the long term we could perform validation on CPU to avoid memory problems
         mat_val = tf.placeholder(tf.float32, shape=(N, M, num_features), name='mat')##data matrix for validation: 
         mask_val = tf.placeholder(tf.float32, shape=(N, M, 1), name='mask_val')#the entries not present during training
         mask_tr_val = tf.placeholder(tf.float32, shape=(N, M, 1), name='mask_tr_val')#both training and validation entries
@@ -92,13 +139,21 @@ def main(opts):
             out_val = decoder.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#reuse it for validation
 
         #loss and training
-        rec_loss = rec_loss_fn(mat, mask_tr, out_tr)# reconstruction loss
+        rec_loss = loss_fn(inverse_trans(mat), mask_tr, inverse_trans(out_tr))# reconstruction loss
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
-        rec_loss_val = rec_loss_fn(mat_val, mask_val, out_val)
+        rec_loss_val = loss_fn(inverse_trans(mat_val), mask_val, inverse_trans(out_val))
         total_loss = rec_loss + reg_loss 
 
+        rng = tf.range(1,6,1, dtype=tf.float32)
+        idx = tf.convert_to_tensor([[2],[0]], dtype=np.int32)
+        mse_loss_train = rec_loss_fn(mat_raw, mask_tr, tf.reshape(tf.tensordot(tf.nn.softmax(out_tr), rng, idx), (maxN,maxM,1)))
+        mse_loss_valid = rec_loss_fn(mat_raw_valid, mask_val, tf.reshape(tf.tensordot(tf.nn.softmax(out_val), rng, idx), (N,M,1)))
+
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
+        merged = tf.summary.merge_all()
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        train_writer = tf.summary.FileWriter('logs/train',
+                                            sess.graph)
         sess.run(tf.global_variables_initializer())
 
         iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
@@ -108,31 +163,46 @@ def main(opts):
 
         for ep in range(opts['epochs']):
             begin = time.time()
-            loss_tr_, rec_loss_tr_, loss_val_ = 0,0,0
+            loss_tr_, rec_loss_tr_, loss_val_, mse_tr = 0,0,0,0
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
-                inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
+                inds_ = np.ix_(indn_,indm_,range(num_features))
+                inds_mask = np.ix_(indn_,indm_, [0])
+                #inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
-                tr_dict = {mat:data['mat_tr_val'][inds_],
-                           mask_tr:data['mask_tr'][inds_]}
+                tr_dict = {mat:standardize(input_data[inds_]),
+                           mask_tr:data['mask_tr'][inds_mask],
+                           mat_raw:raw_input_data[inds_mask]}
 
-                _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
-
-                loss_tr_ += np.sqrt(bloss_)
-                rec_loss_tr_ += np.sqrt(brec_loss_)
+                if opts.get("loss", "mse") == "mse":
+                    _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
+                    loss_tr_ += np.sqrt(bloss_)
+                    rec_loss_tr_ += np.sqrt(brec_loss_)
+                elif opts.get("loss", "mse") == "ce":
+                    _, bloss_, brec_loss_, mse = sess.run([train_step, total_loss, rec_loss, mse_loss_train], 
+                                                          feed_dict=tr_dict)
+                    loss_tr_ += np.sqrt(mse)
+                    rec_loss_tr_ += brec_loss_
 
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-            val_dict = {mat_val:data['mat_tr_val'],
+            val_dict = {mat_val:standardize(input_data),
                         mask_val:data['mask_val'],
-                        mask_tr_val:data['mask_tr']}
-        
-            bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
+                        mask_tr_val:data['mask_tr'],
+                        mat_raw_valid:raw_input_data}
+
+            if merged is not None:
+                summary, = sess.run([merged], feed_dict=tr_dict)
+                train_writer.add_summary(summary, ep)
+            if opts.get("loss", "mse") == "mse":
+                bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
+            else:
+                bloss_true, bloss_ = sess.run([rec_loss_val, mse_loss_valid], feed_dict=val_dict)
             loss_val_ += np.sqrt(bloss_)
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
                 min_loss_epoch = ep
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch), flush=True)
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch))
 
 
 if __name__ == "__main__":
@@ -155,10 +225,12 @@ if __name__ == "__main__":
     if 'movielens-100k' in path:
         maxN = 943
         maxM = 1682
+        #maxN = 100
+        #maxM = 100
         skip_connections = True
-        units = 32
+        units = 10
         latent_features = 5
-        learning_rate = 0.001
+        learning_rate = 0.1
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -180,30 +252,31 @@ if __name__ == "__main__":
            'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
+           'loss':'ce',
            'data_path':path,
            'encoder':[
-               {'type':'matrix_dense', 'units':units},
-               {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':True},
-               {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':units, "theta_0": False, "theta_3": False},
+               #{'type':'matrix_dropout'},
+               #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
+               #{'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": False, "theta_3": False},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
-               {'type':'matrix_dense', 'units':units},
-               {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':True},
-               {'type':'matrix_dropout'},
-                {'type':'matrix_dense', 'units':1, 'activation':None},
+               #{'type':'matrix_dense', 'units':units},
+               #{'type':'matrix_dropout'},
+               #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
+               #{'type':'matrix_dropout'},
+                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': False, 'theta_5': False, "bilinear": True}
             ],
             'defaults':{#default values for each layer type (see layer.py)s
                 'matrix_dense':{
-                    # 'activation':tf.nn.tanh,
+                    #'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
                     'activation':tf.nn.relu,
                     'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
-                    'kernel_initializer': tf.random_normal_initializer(0, .01),
+                    'kernel_initializer': tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32),# tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                     'skip_connections':False,
                 },
@@ -213,7 +286,7 @@ if __name__ == "__main__":
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                 },
                 'matrix_pool':{
-                    'pool_mode':'max',
+                    'pool_mode':'mean',
                 },
                 'matrix_dropout':{
                     'rate':.2,

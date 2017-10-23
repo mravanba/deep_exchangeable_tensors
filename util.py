@@ -16,6 +16,17 @@ floatX = "float32"
 data_folder = "data"
 
 
+def to_indicator(mat):
+    out = np.zeros((mat.shape[0], mat.shape[1], 5))
+    for i in range(1, 6):
+        out[:, :, i-1] = (1 * (mat == i)).reshape((mat.shape[0], mat.shape[1]))
+    return out
+
+def to_number(mat):
+    out = (np.argmax(mat, axis=2).reshape((mat.shape[0], mat.shape[1], 1)))
+    out[mat.sum(axis=2) > 0] += 1
+    return np.array(out, dtype=floatX)
+
 def get_data(dataset='movielens-small',
                  mode='dense',#returned matrix: dense, sparse, table
                  train=.8,
@@ -210,13 +221,13 @@ def get_data(dataset='movielens-small',
         rand_perm = rng.permutation(n_ratings)
         mask_tr = np.zeros((n_users, n_movies), dtype=np.float32)
         mask_val = np.zeros((n_users, n_movies), dtype=np.float32)
-        mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
         mask_ts = np.zeros((n_users, n_movies), dtype=np.float32)
-        mask_tr_val[ratings.user_id[rand_perm[:n_valid]]-1, movies[rand_perm[:n_valid]]] = 1
+        # mask_tr_val = np.zeros((n_users, n_movies), dtype=np.float32)
+        # mask_tr_val[ratings.user_id[rand_perm[:n_valid]]-1, movies[rand_perm[:n_valid]]] = 1
         mask_ts[ratings.user_id[rand_perm[n_valid:n_test]]-1,movies[rand_perm[n_valid:n_test]]] = 1
-        mask_tr[ratings.user_id[rand_perm[:n_train]]-1,movies[rand_perm[:n_train]]] = 1
+        mask_tr[ratings.user_id[rand_perm[:n_train]]-1, movies[rand_perm[:n_train]]] = 1
         mask_val[ratings.user_id[rand_perm[n_train:n_valid]]-1,movies[rand_perm[n_train:n_valid]]] = 1
-        n_ratings_tr_val = ratings.user_id[rand_perm[:n_valid]].shape[0]
+        # n_ratings_tr_valn_ratings_tr_val = ratings.user_id[rand_perm[:n_valid]].shape[0]
         p_train = train / (train + valid)
         p_valid = 1 - p_train
         mask_tr_val_split = rng.choice([0,1], size=n_ratings_tr_val, p=[p_train, p_valid])
