@@ -60,6 +60,7 @@ def main(opts):
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_tr_val'].shape
     maxN, maxM = opts['maxN'], opts['maxM']
+    sizes = (N, M)
 
     if N < maxN: maxN = N
     if M < maxM: maxM = M
@@ -67,6 +68,7 @@ def main(opts):
     if opts['verbose'] > 0:
         print('\nFactorized Autoencoder run settings:')
         print('dataset: ', path)
+        print('drop mask: ', opts['defaults']['matrix_sparse']['drop_mask'])
         print('Exchangable layer pool mode: ', opts['defaults']['matrix_sparse']['pool_mode'])
         print('Pooling layer pool mode: ', opts['defaults']['matrix_pool_sparse']['pool_mode'])
         print('learning rate: ', opts['lr'])
@@ -80,23 +82,29 @@ def main(opts):
         mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
         mask_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr')
         mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
-
+        
         mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
         mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
         mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
+        row_indices = tf.placeholder(tf.int32, shape=[None], name='row_indices')
+        col_indices = tf.placeholder(tf.int32, shape=[None], name='col_indices')
 
         with tf.variable_scope("encoder"):
             tr_dict = {'input':mat_values_tr,
                        'mask_indices':mask_indices_tr,
                        'shape':mat_shape_tr,
-                       'units':1}
+                       'units':1,
+                       'row': row_indices,
+                       'col': col_indices}
 
             val_dict = {'input':mat_values_tr,
                         'mask_indices':mask_indices_tr,
                         'shape':mat_shape_tr,
-                        'units':1}
-
-            encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
+                        'units':1,
+                        'row': row_indices,
+                        'col': col_indices}
+            
+            encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2, sizes=sizes) #define the encoder
             out_enc_tr = encoder.get_output(tr_dict) #build the encoder
             out_enc_val = encoder.get_output(val_dict, reuse=True, verbose=0, is_training=False)#get encoder output, reusing the neural net
 
@@ -105,14 +113,18 @@ def main(opts):
                        'mvec':out_enc_tr['mvec'],
                        'mask_indices':mask_indices_tr,
                        'shape':out_enc_tr['shape'],  ## Passing in shape to be used in sparse functions 
-                       'units':out_enc_tr['units']}
+                       'units':out_enc_tr['units'],
+                       'row': row_indices,
+                       'col': col_indices}
             val_dict = {'nvec':out_enc_val['nvec'],
                         'mvec':out_enc_val['mvec'],
                         'mask_indices':mask_indices_val,
                         'shape':out_enc_val['shape'],
-                        'units':out_enc_val['units']}
+                        'units':out_enc_val['units'],
+                        'row': row_indices,
+                       'col': col_indices}
 
-            decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
+            decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2, sizes=sizes)#define the decoder
             out_dec_tr = decoder.get_output(tr_dict)#build it
             out_tr = out_dec_tr['input']
 
@@ -147,29 +159,11 @@ def main(opts):
                 mat_sp = data['mat_tr_val'][inds_] * data['mask_tr'][inds_]
                 mat_sp = dense_array_to_sparse(mat_sp)
                 mask_tr_sp = dense_array_to_sparse(data['mask_tr'][inds_])
-
                 tr_dict = {mat_values_tr:mat_sp['values'],
                             mask_indices_tr:mask_tr_sp['indices'][:,0:2],
-                            mat_shape_tr:[maxN,maxM,1]}
-
-            # for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):# Sampling dense indices directly doesnt work right now.
-
-            #     _, X = np.unique(data['mask_indices_tr'][sample_][:,0], return_inverse=True)
-            #     _, Y = np.unique(data['mask_indices_tr'][sample_][:,1], return_inverse=True)
-            #     rescaled_indices = np.array(list(zip(X,Y)))
-
-            #     batchN = rescaled_indices[minibatch_size-1,0]
-            #     batchM = np.max(rescaled_indices[:,1])
-                
-            #     # print("## -> data['mat_values_tr'][sample_].shape", data['mat_values_tr'][sample_].shape)
-            #     # print("## -> rescaled_indices.shape", rescaled_indices.shape)
-            #     # print("## -> iters_per_epoch", iters_per_epoch)
-            #     # print("## -> batchN, batchM", batchN, ", ", batchM)
-
-            #     tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
-            #                 mask_indices_tr:rescaled_indices,
-            #                 mat_shape_tr:[batchN+1,batchM+1,1]}
-
+                            mat_shape_tr:[maxN,maxM,1],
+                            row_indices:indn_.flatten(),
+                            col_indices:indm_.flatten()}
 
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -184,11 +178,11 @@ def main(opts):
                         mask_indices_tr:data['mask_indices_tr'],
                         mat_shape_tr:[N,M,1],
                         mat_values_val:data['mat_values_val'],
-                        mask_indices_val:data['mask_indices_val']}
+                        mask_indices_val:data['mask_indices_val'],
+                        row_indices:np.arange(N),
+                        col_indices:np.arange(M)}
 
             bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
-
-
             loss_val_ += np.sqrt(bloss_)
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
@@ -204,7 +198,7 @@ if __name__ == "__main__":
     # path = 'movielens-TEST'
     path = 'movielens-100k'
     # path = 'movielens-1M'
-    # path = 'netflix/6m'    
+    # path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
@@ -217,8 +211,8 @@ if __name__ == "__main__":
 
     ## 1M Configs
     if 'movielens-1M' in path:
-        maxN = 250
-        maxM = 150
+        maxN = 300
+        maxM = 200
         skip_connections = True
         units = 54
         latent_features = 10
@@ -241,13 +235,13 @@ if __name__ == "__main__":
            # 'maxM':1682,#num movies per submatrix
            'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            'maxM':maxM,#num movies per submatrix
-           'minibatch_size':1000,
+           'minibatch_size':2500,
            'visualize':False,
            'save':False,
            'data_path':path,
            'output_file':'output',
            'encoder':[
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':units, 'individual_bias':False},
                # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                # {'type':'matrix_dropout_sparse'},
@@ -255,7 +249,7 @@ if __name__ == "__main__":
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':units, 'individual_bias':False},
                # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                # {'type':'matrix_dropout_sparse'},
@@ -266,7 +260,7 @@ if __name__ == "__main__":
                     # 'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
                     'activation':tf.nn.relu,
-                    # 'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
+                    'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),

@@ -11,6 +11,8 @@ import os
 import scipy.interpolate as interpolate
 import functools
 from sparse_util import *
+from scipy.sparse import csr_matrix
+import numpy as np
 
 floatX = "float32"
 data_folder = "data"
@@ -26,6 +28,32 @@ def to_number(mat):
     out = (np.argmax(mat, axis=2).reshape((mat.shape[0], mat.shape[1], 1)))
     out[mat.sum(axis=2) > 0] += 1
     return np.array(out, dtype=floatX)
+
+def df_to_matrix(df, users, movies):
+    row = df.user_id - 1
+    col = df.movie_id - 1
+    data = df.rating
+    return csr_matrix((data, (row, col)), shape=(users, movies), dtype="float32")
+
+def get_mask(matrix):
+    return np.array(1.*(matrix.toarray() > 0.).reshape((matrix.shape[0], 
+                                                        matrix.shape[1], 1)), 
+                    dtype="float32")
+
+
+def get_movielens():
+    r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
+    train = pd.read_csv("./data/ml-100k/u1.base", sep="\t", names=r_cols, encoding='latin-1')
+    validation = pd.read_csv("./data/ml-100k/u1.test", sep="\t", names=r_cols, encoding='latin-1')
+    train = df_to_matrix(train, 943, 1682)
+    validation = df_to_matrix(validation, 943, 1682)
+    return {'mat_tr':train.toarray()[:,:,None], #Dense data
+              'mat_val':validation.toarray()[:,:,None],
+              'mask_tr':get_mask(train),
+              'mask_tr_val':get_mask(train)+ get_mask(validation),
+              'mask_val':get_mask(train)}
+
+
 
 def get_data(dataset='movielens-small',
                  mode='dense',#returned matrix: dense, sparse, table

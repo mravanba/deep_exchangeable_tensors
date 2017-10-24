@@ -3,7 +3,7 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 from base import Model
-from util import get_data, to_indicator, to_number
+from util import get_data, to_indicator, to_number, get_movielens
 from sparse_util import sparse_tensordot_sparse, get_mask_indices
 import math
 import time
@@ -65,18 +65,19 @@ def rec_loss_fn(mat, mask, rec):
 def main(opts):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.2, test=.001)
+    #data = get_data(path, train=.8, valid=.2, test=.001)
+    data = get_movielens()
     
     standardize = inverse_trans = lambda x: x # defaults
     if opts.get("loss", "mse") == "mse":
-        input_data = data['mat_tr_val']
-        raw_input_data = data['mat_tr_val'].copy()
+        input_data = data['mat_tr']
+        raw_input_data = data['mat_tr'].copy()
         if opts.get('normalize', False):
             print("Normalizing data")
             standardize, inverse_trans = normalize(input_data)
     else:
-        raw_input_data = data['mat_tr_val'].copy()
-        input_data = to_indicator(data['mat_tr_val'])
+        raw_input_data = data['mat_tr'].copy()
+        input_data = to_indicator(data['mat_tr'])
 
     loss_fn = get_loss_function(opts.get("loss", "mse"))
     #build encoder and decoder and use VAE loss
@@ -122,7 +123,7 @@ def main(opts):
             encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
 
             out_enc_tr = encoder.get_output(tr_dict) #build the encoder
-            out_enc_val = encoder.get_output(val_dict, reuse=True, verbose=0, is_training=False)#get encoder output, reusing the neural net
+            out_enc_val = encoder.get_output(tr_dict, reuse=True, verbose=0, is_training=False)#get encoder output, reusing the neural net
             
 
         with tf.variable_scope("decoder"):
@@ -131,7 +132,8 @@ def main(opts):
                        'mask':out_enc_tr['mask']}
             val_dict = {'nvec':out_enc_val['nvec'],
                         'mvec':out_enc_val['mvec'],
-                        'mask':out_enc_val['mask']}
+                        'mask':mask_val#out_enc_val['mask']
+                        }
 
             decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
 
@@ -186,10 +188,11 @@ def main(opts):
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-            val_dict = {mat_val:standardize(input_data),
+            val_dict = {mat:standardize(data['mat_tr']),
+                        mat_val:data['mat_val'],
                         mask_val:data['mask_val'],
-                        mask_tr_val:data['mask_tr'],
-                        mat_raw_valid:raw_input_data}
+                        mask_tr:data['mask_tr']}#,
+                        #mat_raw_valid:raw_input_data}
 
             if merged is not None:
                 summary, = sess.run([merged], feed_dict=tr_dict)
@@ -230,7 +233,7 @@ if __name__ == "__main__":
         skip_connections = True
         units = 10
         latent_features = 5
-        learning_rate = 0.1
+        learning_rate = 0.001
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -252,7 +255,7 @@ if __name__ == "__main__":
            'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'loss':'ce',
+           'loss':'mse',
            'data_path':path,
            'encoder':[
                {'type':'matrix_dense', 'units':units, "theta_0": False, "theta_3": False},
