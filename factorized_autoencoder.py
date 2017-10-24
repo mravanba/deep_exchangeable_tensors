@@ -178,7 +178,7 @@ def main(opts):
 
             tr_dict = {mat:standardize(input_data),
                            mask_tr:data['mask_tr'],
-                           mat_raw:raw_input_data}
+                           mat_raw:data['mat_tr']}
 
             if opts.get("loss", "mse") == "mse":
                 _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -193,11 +193,12 @@ def main(opts):
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-            val_dict = {mat:standardize(data['mat_tr']),
-                        mat_val:data['mat_val'],
+            val_data = to_indicator(data['mat_val']) if opts.get("loss", "mse") == "ce" else data['mat_val']
+            val_dict = {mat:standardize(input_data),
+                        mat_val:val_data,
                         mask_val:data['mask_val'],
-                        mask_tr:data['mask_tr']}#,
-                        #mat_raw_valid:raw_input_data}
+                        mask_tr:data['mask_tr'],
+                        mat_raw_valid:data['mat_val']}
 
             if merged is not None:
                 summary, = sess.run([merged], feed_dict=tr_dict)
@@ -238,7 +239,7 @@ if __name__ == "__main__":
         skip_connections = True
         units = 100
         latent_features = 50
-        learning_rate = 0.001
+        learning_rate = 0.01
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -260,7 +261,7 @@ if __name__ == "__main__":
            'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'loss':'mse',
+           'loss':'ce',
            'data_path':path,
            'encoder':[
                {'type':'matrix_dense', 'units':units, "theta_0": False, "theta_3": False},
@@ -273,9 +274,9 @@ if __name__ == "__main__":
             'decoder':[
                #{'type':'matrix_dense', 'units':units},
                #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':False},
+               #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
                #{'type':'matrix_dropout'},
-                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False}
+                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': False, 'theta_5': False, "bilinear": True}
             ],
             'defaults':{#default values for each layer type (see layer.py)s
                 'matrix_dense':{
