@@ -51,7 +51,7 @@ def get_movielens():
               'mat_val':validation.toarray()[:,:,None],
               'mask_tr':get_mask(train),
               'mask_tr_val':get_mask(train)+ get_mask(validation),
-              'mask_val':get_mask(train)}
+              'mask_val':get_mask(validation)}
 
 
 

@@ -120,10 +120,13 @@ def main(opts):
             val_dict = {'input':mat_val,
                         'mask':mask_tr_val}
 
-            encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
+            encoder = Model(layers=opts['encoder'],
+                            layer_defaults=opts['defaults'], 
+                            verbose=2) #define the encoder
 
             out_enc_tr = encoder.get_output(tr_dict) #build the encoder
-            out_enc_val = encoder.get_output(tr_dict, reuse=True, verbose=0, is_training=False)#get encoder output, reusing the neural net
+            # get encoder output, reusing the neural net
+            out_enc_val = encoder.get_output(tr_dict, reuse=True, verbose=0, is_training=False)
             
 
         with tf.variable_scope("decoder"):
@@ -144,12 +147,14 @@ def main(opts):
         rec_loss = loss_fn(inverse_trans(mat), mask_tr, inverse_trans(out_tr))# reconstruction loss
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
         rec_loss_val = loss_fn(inverse_trans(mat_val), mask_val, inverse_trans(out_val))
-        total_loss = rec_loss + reg_loss 
+        total_loss = rec_loss + reg_loss
 
         rng = tf.range(1,6,1, dtype=tf.float32)
         idx = tf.convert_to_tensor([[2],[0]], dtype=np.int32)
-        mse_loss_train = rec_loss_fn(mat_raw, mask_tr, tf.reshape(tf.tensordot(tf.nn.softmax(out_tr), rng, idx), (maxN,maxM,1)))
-        mse_loss_valid = rec_loss_fn(mat_raw_valid, mask_val, tf.reshape(tf.tensordot(tf.nn.softmax(out_val), rng, idx), (N,M,1)))
+        mse_loss_train = rec_loss_fn(mat_raw, mask_tr, 
+                                    tf.reshape(tf.tensordot(tf.nn.softmax(out_tr), rng, idx), (maxN,maxM,1)))
+        mse_loss_valid = rec_loss_fn(mat_raw_valid, mask_val, 
+                                    tf.reshape(tf.tensordot(tf.nn.softmax(out_val), rng, idx), (N,M,1)))
 
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
         merged = tf.summary.merge_all()
