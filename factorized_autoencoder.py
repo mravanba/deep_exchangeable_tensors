@@ -166,24 +166,24 @@ def main(opts):
         for ep in range(opts['epochs']):
             begin = time.time()
             loss_tr_, rec_loss_tr_, loss_val_, mse_tr = 0,0,0,0
-            for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
-                inds_ = np.ix_(indn_,indm_,range(num_features))
-                inds_mask = np.ix_(indn_,indm_, [0])
+            #for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
+            #    inds_ = np.ix_(indn_,indm_,range(num_features))
+            #    inds_mask = np.ix_(indn_,indm_, [0])
                 #inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
-                tr_dict = {mat:standardize(input_data[inds_]),
-                           mask_tr:data['mask_tr'][inds_mask],
-                           mat_raw:raw_input_data[inds_mask]}
+            tr_dict = {mat:standardize(input_data),
+                           mask_tr:data['mask_tr'],
+                           mat_raw:raw_input_data}
 
-                if opts.get("loss", "mse") == "mse":
-                    _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
-                    loss_tr_ += np.sqrt(bloss_)
-                    rec_loss_tr_ += np.sqrt(brec_loss_)
-                elif opts.get("loss", "mse") == "ce":
-                    _, bloss_, brec_loss_, mse = sess.run([train_step, total_loss, rec_loss, mse_loss_train], 
+            if opts.get("loss", "mse") == "mse":
+                _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
+                loss_tr_ += np.sqrt(bloss_)
+                rec_loss_tr_ += np.sqrt(brec_loss_)
+            elif opts.get("loss", "mse") == "ce":
+                _, bloss_, brec_loss_, mse = sess.run([train_step, total_loss, rec_loss, mse_loss_train], 
                                                           feed_dict=tr_dict)
-                    loss_tr_ += np.sqrt(mse)
-                    rec_loss_tr_ += brec_loss_
+                loss_tr_ += np.sqrt(mse)
+                rec_loss_tr_ += brec_loss_
 
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
@@ -231,8 +231,8 @@ if __name__ == "__main__":
         #maxN = 100
         #maxM = 100
         skip_connections = True
-        units = 10
-        latent_features = 5
+        units = 100
+        latent_features = 50
         learning_rate = 0.001
 
     ## 1M Configs
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         skip_connections = True
         units = 54
         latent_features = 10
-        learning_rate = 0.001
+        learning_rate = 0.01
 
     
     opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
@@ -268,9 +268,9 @@ if __name__ == "__main__":
             'decoder':[
                #{'type':'matrix_dense', 'units':units},
                #{'type':'matrix_dropout'},
-               #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':False},
                #{'type':'matrix_dropout'},
-                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': False, 'theta_5': False, "bilinear": True}
+                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False}
             ],
             'defaults':{#default values for each layer type (see layer.py)s
                 'matrix_dense':{
