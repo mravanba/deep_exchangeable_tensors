@@ -62,7 +62,23 @@ def dense_tensor_to_sparse(x, mask_indices=None, shape=None):
 def dense_tensor_to_sparse_values(x, mask_indices, num_features):
     inds = expand_tensor_indices(mask_indices, num_features)
     return tf.gather_nd(x, inds)
-    # return tf.SparseTensorValue(inds, vals, shape)
+    
+
+def dense_vector_to_sparse_values(x, mask_indices, num_features):
+    if x.shape[0] == 1:
+        unique = tf.unique_with_counts(mask_indices[:,1], out_idx=tf.int32)
+        unique_vals = unique[0]
+        unique_inds = unique[1]
+        inds = tf.cast(tf.gather(unique_vals, unique_inds), tf.int32)
+        vals = tf.gather(tf.transpose(x, perm=[1,0,2]), inds)
+        return tf.reshape(vals, [-1])
+    elif x.shape[1] == 1:
+        unique = tf.unique_with_counts(mask_indices[:,0], out_idx=tf.int32)
+        unique_vals = unique[0]
+        unique_inds = unique[1]
+        inds = tf.cast(tf.gather(unique_vals, unique_inds), tf.int32)
+        vals = tf.gather(x, inds)
+        return tf.reshape(vals, [-1])
 
 
 def sparse_tensor_to_dense(x_sp, shape=None):

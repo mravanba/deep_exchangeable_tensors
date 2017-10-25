@@ -70,7 +70,7 @@ def matrix_dense(
             if layer_params.get('theta_0', True):
                 config_string += "theta 0, "
                 theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
-                output += sign*tf.tensordot(mat, theta_0 * 0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
+                output += sign*tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
                 output.set_shape([N,M,units])#because of current tensorflow bug!!
                 sign *= -1
             
@@ -91,7 +91,7 @@ def matrix_dense(
             if layer_params.get('theta_3', True):
                 config_string += "theta 3, "
                 theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)          
-                output +=  sign *tf.tensordot(mat_marg_2, theta_3 * 0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
+                output +=  sign *tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
                 output.set_shape([N,M,units])#because of current tensorflow bug!!            
                 sign *= -1
               
@@ -259,10 +259,10 @@ def matrix_sparse(
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, mode='sum', shape=[N,M,K], axis=1, keep_dims=True) / norm_M
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, mode='sum', shape=[N,M,K], axis=None, keep_dims=True) / norm_NM
 
-            theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
-            theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
-            theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)
-            theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)
+            theta_0 = model_variable("theta_0",shape=[K, units],trainable=True, dtype=tf.float32)
+            theta_1 = model_variable("theta_1",shape=[K, units],trainable=True, dtype=tf.float32)
+            theta_2 = model_variable("theta_2",shape=[K, units],trainable=True, dtype=tf.float32)
+            theta_3 = model_variable("theta_3",shape=[K, units],trainable=True, dtype=tf.float32)
             
             # bias = model_variable("bias",shape=[1],trainable=True)
             
@@ -285,9 +285,9 @@ def matrix_sparse(
             # output_tmp.set_shape([N,1,units])#because of current tensorflow bug!!
             if mat_values is not None:
                 output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=1)
-            else:
-                # output = output_tmp
-                output = output_tmp + output
+            else:     
+                output = output + output_tmp
+                # output = dense_vector_to_sparse_values(output_tmp, mask_indices, units) + output                
 
         if mvec is not None:
             theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
@@ -296,9 +296,8 @@ def matrix_sparse(
             if mat_values is not None:
                 output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=0)
             else:
-                # output = dense_tensor_to_sparse_values(output, mask_indices, units)
-                # output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=0)
                 output = output + output_tmp
+                # output = dense_vector_to_sparse_values(output_tmp, mask_indices, units) + output
 
         if layer_params.get("individual_bias", False):
             # for testing my individual bias idea - I don't think it is helpful
