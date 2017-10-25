@@ -77,6 +77,7 @@ def main(opts):
 
             mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
             mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
+            mask_indices_tr_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr_val')
             mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
 
             with tf.variable_scope("encoder"):
@@ -102,7 +103,7 @@ def main(opts):
                            'units':out_enc_tr['units']}
                 val_dict = {'nvec':out_enc_val['nvec'],
                             'mvec':out_enc_val['mvec'],
-                            'mask_indices':mask_indices_val,
+                            'mask_indices':mask_indices_tr_val,
                             'shape':out_enc_val['shape'],
                             'units':out_enc_val['units']}
 
@@ -178,7 +179,8 @@ def main(opts):
                             mask_indices_tr:data['mask_indices_tr'],
                             mat_shape_tr:[N,M,1],
                             mat_values_val:data['mat_values_tr_val'],
-                            mask_indices_val:data['mask_indices_tr_val']}
+                            mask_indices_val:data['mask_indices_val'],
+                            mask_indices_tr_val:data['mask_indices_tr_val']}
 
                 bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
 
