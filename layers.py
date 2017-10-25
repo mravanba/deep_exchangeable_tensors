@@ -64,7 +64,7 @@ def matrix_dense(
             if layer_params.get('theta_0', True):
                 config_string += "theta 0, "
                 theta_0 = model_variable("theta_0",shape=[K, units],trainable=True)
-                output = tf.tensordot(mat, theta_0 * 0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
+                output = tf.tensordot(mat, theta_0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x M x units
                 output.set_shape([N,M,units])#because of current tensorflow bug!!
             
             if layer_params.get('theta_1', True):
@@ -82,7 +82,7 @@ def matrix_dense(
             if layer_params.get('theta_3', True):
                 config_string += "theta 3, "
                 theta_3 = model_variable("theta_3",shape=[K, units],trainable=True)          
-                output += tf.tensordot(mat_marg_2, theta_3 * 0, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
+                output += tf.tensordot(mat_marg_2, theta_3, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x 1 x units
                 output.set_shape([N,M,units])#because of current tensorflow bug!!            
               
 
