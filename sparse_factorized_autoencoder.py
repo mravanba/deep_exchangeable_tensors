@@ -36,6 +36,7 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
 
 def sample_dense_values_uniform(mask_indices, minibatch_size, iters_per_epoch):
     num_vals = mask_indices.shape[0]
+    minibatch_size = np.minimum(minibatch_size, num_vals)
     for n in range(iters_per_epoch):
         sample = np.random.choice(num_vals, size=minibatch_size, replace=False)
         yield np.sort(sample)
@@ -125,7 +126,7 @@ def main(opts):
             sess.run(tf.global_variables_initializer())
 
             minibatch_size = opts['minibatch_size']
-            iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
+            iters_per_epoch = np.maximum(data['mask_indices_tr'].shape[0] // minibatch_size, 1)
             # iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
             
             min_loss = 5
@@ -163,7 +164,6 @@ def main(opts):
                     tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
                                 mask_indices_tr:rescaled_indices,
                                 mat_shape_tr:[batchN+1,batchM+1,1]}
-
 
 
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -206,23 +206,26 @@ if __name__ == "__main__":
     if 'movielens-100k' in path:
         maxN = 100
         maxM = 100
-        skip_connections = True
-        units = 32
-        latent_features = 5
+        minibatch_size = 1000,
+        skip_connections = False
+        units = 2
+        latent_features = 2
         learning_rate = 0.001
 
     ## 1M Configs
     if 'movielens-1M' in path:
         maxN = 250
         maxM = 150
+        minibatch_size = 1000,
         skip_connections = True
-        units = 54
+        units = 64
         latent_features = 10
         learning_rate = 0.001
 
     if 'netflix/6m' in path:
         maxN = 300
         maxM = 300
+        minibatch_size = 1000,
         skip_connections = True
         units = 32
         latent_features = 5
@@ -244,17 +247,17 @@ if __name__ == "__main__":
            'output_file':'output',
            'encoder':[
                {'type':'matrix_sparse', 'units':units},
-               # {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
-               # {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
                {'type':'matrix_sparse', 'units':units},
-               # {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
-               # {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)
@@ -277,7 +280,7 @@ if __name__ == "__main__":
                     'pool_mode':'max',
                 },
                 'matrix_dropout_sparse':{
-                    'rate':.1,
+                    'rate':.001,
                 }
             },
            'lr':learning_rate,
