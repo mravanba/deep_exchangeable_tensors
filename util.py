@@ -41,7 +41,7 @@ def get_mask(matrix):
                     dtype="float32")
 
 
-def get_movielens():
+def get_movielens_dense():
     r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
     train = pd.read_csv("./data/ml-100k/u1.base", sep="\t", names=r_cols, encoding='latin-1')
     validation = pd.read_csv("./data/ml-100k/u1.test", sep="\t", names=r_cols, encoding='latin-1')
@@ -53,7 +53,20 @@ def get_movielens():
               'mask_tr_val':get_mask(train)+ get_mask(validation),
               'mask_val':get_mask(validation)}
 
-
+def get_movielens_sparse():
+    r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
+    train = pd.read_csv("./data/ml-100k/u1.base", sep="\t", names=r_cols, encoding='latin-1')
+    validation = pd.read_csv("./data/ml-100k/u1.test", sep="\t", names=r_cols, encoding='latin-1')
+    tr_mask = np.concatenate([(train.user_id - 1)[:, None], (train.movie_id - 1)[:, None]], axis=1)
+    val_mask = np.concatenate([(validation.user_id - 1)[:, None], (validation.movie_id - 1)[:, None]], axis=1)
+    return {'mat_values_tr':train.rating,
+            'mask_indices_tr':tr_mask,
+            'mat_values_val':validation.rating,
+            'mask_indices_val':val_mask,
+            'mat_shape':(943, 1682, 1),
+            'mask_indices_tr_val': np.concatenate([tr_mask, val_mask], axis=0),
+            'mat_values_tr_val':np.concatenate([train.rating, validation.rating], axis=0)
+           }
 
 def get_data(dataset='movielens-small',
                  mode='dense',#returned matrix: dense, sparse, table
