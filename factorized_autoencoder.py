@@ -237,8 +237,8 @@ if __name__ == "__main__":
         #maxN = 100
         #maxM = 100
         skip_connections = True
-        units = 100
-        latent_features = 50
+        units = 200
+        latent_features = 75
         learning_rate = 0.01
 
     ## 1M Configs
@@ -264,11 +264,11 @@ if __name__ == "__main__":
            'loss':'ce',
            'data_path':path,
            'encoder':[
-               {'type':'matrix_dense', 'units':units, "theta_0": False, "theta_3": False},
+               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True},
                #{'type':'matrix_dropout'},
                #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
                #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": False, "theta_3": False},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
@@ -276,7 +276,7 @@ if __name__ == "__main__":
                #{'type':'matrix_dropout'},
                #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
                #{'type':'matrix_dropout'},
-                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': False, 'theta_5': False, "bilinear": True}
+                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False}
             ],
             'defaults':{#default values for each layer type (see layer.py)s
                 'matrix_dense':{
@@ -284,7 +284,7 @@ if __name__ == "__main__":
                     # 'activation':tf.nn.sigmoid,
                     'activation':tf.nn.relu,
                     'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
-                    'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
+                    'pool_mode':'max',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32),# tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                     'skip_connections':False,
