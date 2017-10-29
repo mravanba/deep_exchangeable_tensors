@@ -42,8 +42,8 @@ def sample_dense_values_uniform(mask_indices, minibatch_size, iters_per_epoch):
         yield np.sort(sample)
 
 
-def rec_loss_fn_sp(mat_values, mask_indices, rec_values):
-    return tf.reduce_sum((mat_values - rec_values)**2) / tf.cast(tf.shape(mask_indices)[0], tf.float32)
+def rec_loss_fn_sp(mat_values, mask_indices, rec_values, mask_split):
+    return tf.reduce_sum((mat_values - rec_values)**2 * mask_split) / tf.cast(tf.shape(mask_indices)[0], tf.float32)
 
 
 def main(opts):        
@@ -116,18 +116,18 @@ def main(opts):
                 out_val = out_dec_val['input']
 
             #loss and training
-            rec_loss = rec_loss_fn_sp(mat_values_tr, mask_indices_tr, out_tr)
+            rec_loss = rec_loss_fn_sp(mat_values_tr, mask_indices_tr, out_tr, tf.ones(tf.shape(mat_values_tr)))
             reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
-            rec_loss_val = rec_loss_fn_sp(mat_values_val, mask_indices_val, out_val)
+            rec_loss_val = rec_loss_fn_sp(mat_values_val, mask_indices_val, out_val, data['mask_tr_val_split'])
             total_loss = rec_loss + reg_loss
 
             train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
             sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
             sess.run(tf.global_variables_initializer())
 
-            minibatch_size = opts['minibatch_size']
-            iters_per_epoch = np.maximum(data['mask_indices_tr'].shape[0] // minibatch_size, 1)
-            # iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
+            # minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
+            # iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
+            iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
             
             min_loss = 5
             min_loss_epoch = 0
@@ -140,30 +140,30 @@ def main(opts):
                 loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0,0,0,0
 
 
-                # for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM, sample_uniform=False), total=iters_per_epoch):#go over mini-batches
-                #     inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
+                for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM, sample_uniform=False), total=iters_per_epoch):#go over mini-batches
+                    inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
-                #     mat_sp = data['mat_tr_val'][inds_] * data['mask_tr'][inds_]
-                #     mat_sp = dense_array_to_sparse(mat_sp)
-                #     mask_tr_sp = dense_array_to_sparse(data['mask_tr'][inds_])
+                    mat_sp = data['mat_tr_val'][inds_] * data['mask_tr'][inds_]
+                    mat_values = dense_array_to_sparse(mat_sp)['values']
+                    mask_indices = dense_array_to_sparse(data['mask_tr'][inds_])['indices'][:,0:2]
 
-                #     tr_dict = {mat_values_tr:mat_sp['values'],
-                #                 mask_indices_tr:mask_tr_sp['indices'][:,0:2],
-                #                 mat_shape_tr:[maxN,maxM,1]}
+                    tr_dict = {mat_values_tr:mat_values,
+                                mask_indices_tr:mask_indices,
+                                mat_shape_tr:[maxN,maxM,1]}
 
 
-                for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):
+                # for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):
 
-                    _, X = np.unique(data['mask_indices_tr'][sample_][:,0], return_inverse=True)
-                    _, Y = np.unique(data['mask_indices_tr'][sample_][:,1], return_inverse=True)
-                    rescaled_indices = np.array(list(zip(X,Y)))
+                #     mat_values = data['mat_values_tr'][sample_]
+                #     mask_indices = data['mask_indices_tr'][sample_]
 
-                    batchN = rescaled_indices[minibatch_size-1,0]
-                    batchM = np.max(rescaled_indices[:,1])
+                #     batchN = mask_indices[minibatch_size-1,0] + 1
+                #     batchM = np.max(mask_indices[:,1]) + 1
                     
-                    tr_dict = {mat_values_tr:data['mat_values_tr'][sample_],
-                                mask_indices_tr:rescaled_indices,
-                                mat_shape_tr:[batchN+1,batchM+1,1]}
+                #     tr_dict = {mat_values_tr:mat_values,
+                #                 mask_indices_tr:mask_indices,
+                #                 mat_shape_tr:[batchN,batchM,1]}
+
 
 
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -204,28 +204,28 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 100
-        maxM = 100
-        minibatch_size = 1000,
+        maxN = 943
+        maxM = 1682
+        minibatch_size = 1000
         skip_connections = False
-        units = 2
-        latent_features = 2
+        units = 32
+        latent_features = 5
         learning_rate = 0.001
 
     ## 1M Configs
     if 'movielens-1M' in path:
         maxN = 250
         maxM = 150
-        minibatch_size = 1000,
+        minibatch_size = 10000
         skip_connections = True
-        units = 64
-        latent_features = 10
+        units = 32
+        latent_features = 5
         learning_rate = 0.001
 
     if 'netflix/6m' in path:
         maxN = 300
         maxM = 300
-        minibatch_size = 1000,
+        minibatch_size = 1000
         skip_connections = True
         units = 32
         latent_features = 5
@@ -240,24 +240,24 @@ if __name__ == "__main__":
            # 'maxM':1682,#num movies per submatrix
            'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            'maxM':maxM,#num movies per submatrix
-           'minibatch_size':1000,
+           'minibatch_size':minibatch_size,
            'visualize':False,
            'save':False,
            'data_path':path,
            'output_file':'output',
            'encoder':[
                {'type':'matrix_sparse', 'units':units},
-               {'type':'matrix_dropout_sparse'},
+               # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
-               {'type':'matrix_dropout_sparse'},
+               # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
                {'type':'matrix_sparse', 'units':units},
-               {'type':'matrix_dropout_sparse'},
+               # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
-               {'type':'matrix_dropout_sparse'},
+               # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)
@@ -284,6 +284,7 @@ if __name__ == "__main__":
                 }
             },
            'lr':learning_rate,
+           
     }
     
     main(opts)
