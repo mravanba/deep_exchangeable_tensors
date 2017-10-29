@@ -223,12 +223,12 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 943
-        maxM = 1682
-        #maxN = 100
-        #maxM = 100
+        # maxN = 943
+        # maxM = 1682
+        maxN = 100
+        maxM = 100
         skip_connections = True
-        units = 200
+        units = 32
         latent_features = 75
         learning_rate = 0.01
 

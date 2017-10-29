@@ -39,7 +39,8 @@ def sample_dense_values_uniform(mask_indices, minibatch_size, iters_per_epoch):
     minibatch_size = np.minimum(minibatch_size, num_vals)
     for n in range(iters_per_epoch):
         sample = np.random.choice(num_vals, size=minibatch_size, replace=False)
-        yield np.sort(sample)
+        yield sample
+        # yield np.sort(sample)
 
 
 def rec_loss_fn_sp(mat_values, mask_indices, rec_values, mask_split):
@@ -125,9 +126,12 @@ def main(opts):
             sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
             sess.run(tf.global_variables_initializer())
 
-            # minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
-            # iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
-            iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
+            if 'by_row_column_density' in opts['sample_mode']:
+                iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
+            elif 'uniform_over_dense_values' in opts['sample_mode']:
+                minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
+                iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
+            
             
             min_loss = 5
             min_loss_epoch = 0
@@ -140,36 +144,43 @@ def main(opts):
                 loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0,0,0,0
 
 
-                for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM, sample_uniform=False), total=iters_per_epoch):#go over mini-batches
-                    inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
+                if 'by_row_column_density' in opts['sample_mode']:
+                    for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM, sample_uniform=False), total=iters_per_epoch):#go over mini-batches
+                        
+                        inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies                    
+                        mat_sp = data['mat_tr_val'][inds_] * data['mask_tr'][inds_]
+                        mat_values = dense_array_to_sparse(mat_sp)['values']
+                        mask_indices = dense_array_to_sparse(data['mask_tr'][inds_])['indices'][:,0:2]
 
-                    mat_sp = data['mat_tr_val'][inds_] * data['mask_tr'][inds_]
-                    mat_values = dense_array_to_sparse(mat_sp)['values']
-                    mask_indices = dense_array_to_sparse(data['mask_tr'][inds_])['indices'][:,0:2]
+                        tr_dict = {mat_values_tr:mat_values,
+                                    mask_indices_tr:mask_indices,
+                                    mat_shape_tr:[maxN,maxM,1]}
+                        
+                        _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
-                    tr_dict = {mat_values_tr:mat_values,
-                                mask_indices_tr:mask_indices,
-                                mat_shape_tr:[maxN,maxM,1]}
+                        loss_tr_ += np.sqrt(bloss_)
+                        rec_loss_tr_ += np.sqrt(brec_loss_)
 
+                elif 'uniform_over_dense_values' in opts['sample_mode']:
+                    for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):
 
-                # for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), total=iters_per_epoch):
+                        mat_values = data['mat_values_tr'][sample_]
+                        mask_indices = data['mask_indices_tr'][sample_]
+                        batchN = np.max(mask_indices[:,0]) + 1
+                        batchM = np.max(mask_indices[:,1]) + 1
 
-                #     mat_values = data['mat_values_tr'][sample_]
-                #     mask_indices = data['mask_indices_tr'][sample_]
+                        tr_dict = {mat_values_tr:mat_values,
+                                    mask_indices_tr:mask_indices,
+                                    mat_shape_tr:[batchN,batchM,1]}
+                        
+                        _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
-                #     batchN = mask_indices[minibatch_size-1,0] + 1
-                #     batchM = np.max(mask_indices[:,1]) + 1
-                    
-                #     tr_dict = {mat_values_tr:mat_values,
-                #                 mask_indices_tr:mask_indices,
-                #                 mat_shape_tr:[batchN,batchM,1]}
+                        loss_tr_ += np.sqrt(bloss_)
+                        rec_loss_tr_ += np.sqrt(brec_loss_)
+                else:
+                    print('\nERROR - unknown <sample_mode> in main()\n')
+                    return
 
-
-
-                    _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
-
-                    loss_tr_ += np.sqrt(bloss_)
-                    rec_loss_tr_ += np.sqrt(brec_loss_)
 
                 loss_tr_ /= iters_per_epoch
                 rec_loss_tr_ /= iters_per_epoch
@@ -204,12 +215,12 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 943
-        maxM = 1682
-        minibatch_size = 1000
+        maxN = 10000
+        maxM = 10000
+        minibatch_size = 10000000
         skip_connections = False
         units = 32
-        latent_features = 5
+        latent_features = 900
         learning_rate = 0.001
 
     ## 1M Configs
@@ -284,6 +295,7 @@ if __name__ == "__main__":
                 }
             },
            'lr':learning_rate,
+           'sample_mode':'uniform_over_dense_values' # by_row_column_density, uniform_over_dense_values
            
     }
     

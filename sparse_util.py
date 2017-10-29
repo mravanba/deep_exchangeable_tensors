@@ -39,12 +39,11 @@ def get_mask_indices(mask):
 # {'indices':inds, 'values':vals, 'dense_shape':shape}
 # representing a sparse tensor
 # output is a np.ndarray
-def sparse_array_to_dense(x_sp, shape=None):
-    if shape is None:
-        shape = x_sp['dense_shape']    
+def sparse_array_to_dense(values, mask_indices, shape):
     out = np.zeros(shape)
-    inds = list(zip(*x_sp['indices']))
-    out[inds] = x_sp['values']
+    inds = expand_array_indices(mask_indices, shape[2])
+    inds = list(zip(*inds))
+    out[inds] = values
     return out
 
 
