@@ -264,8 +264,6 @@ def matrix_sparse(
             theta_2 = model_variable("theta_2",shape=[K, units],trainable=True, dtype=tf.float32)
             theta_3 = model_variable("theta_3",shape=[K, units],trainable=True, dtype=tf.float32)
             
-            # bias = model_variable("bias",shape=[1],trainable=True)
-            
             output = sparse_tensordot_sparse(mat_values, theta_0, K)
             output_0 = tf.tensordot(mat_marg_0, theta_1, axes=[[2],[0]]) # 1 x M x units
             output = sparse_tensor_broadcast_dense_add(output, output_0, mask_indices, units, broadcast_axis=0)
@@ -273,8 +271,6 @@ def matrix_sparse(
             output = sparse_tensor_broadcast_dense_add(output, output_1, mask_indices, units, broadcast_axis=1)
             output_2 = tf.tensordot(mat_marg_2, theta_3, axes=[[2],[0]]) # 1 x 1 x units
             output = sparse_tensor_broadcast_dense_add(output, output_2, mask_indices, units, broadcast_axis=None)
-
-            # output = tf.SparseTensorValue(output.indices, tf.add(output.values, bias), output.dense_shape)        
 
         nvec = inputs.get('nvec', None)
         mvec = inputs.get('mvec', None)
@@ -286,8 +282,8 @@ def matrix_sparse(
             if mat_values is not None:
                 output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=1)
             else:     
-                output = output + output_tmp
-                # output = dense_vector_to_sparse_values(output_tmp, mask_indices, units) + output                
+                # output = output + output_tmp
+                output = dense_vector_to_sparse_values(output_tmp, mask_indices) + output
 
         if mvec is not None:
             theta_5 = model_variable("theta_5",shape=[K, units],trainable=True)
@@ -296,8 +292,8 @@ def matrix_sparse(
             if mat_values is not None:
                 output = sparse_tensor_broadcast_dense_add(output, output_tmp, mask_indices, units, broadcast_axis=0)
             else:
-                output = output + output_tmp
-                # output = dense_vector_to_sparse_values(output_tmp, mask_indices, units) + output
+                # output = output + output_tmp
+                output = dense_vector_to_sparse_values(output_tmp, mask_indices) + output
 
         if layer_params.get("individual_bias", False):
             # for testing my individual bias idea - I don't think it is helpful
@@ -316,8 +312,8 @@ def matrix_sparse(
         if skip_connections and mat_values is not None:
             output = output + mat_values
 
-        if mat_values is None:
-            output = dense_tensor_to_sparse_values(output, mask_indices, units)
+        # if mat_values is None:
+        #     output = dense_tensor_to_sparse_values(output, mask_indices, units)
 
         outdic = {'input':output, 'mask_indices':mask_indices, 'shape':[N,M,units], 'units':units}
         return outdic

@@ -370,10 +370,6 @@ def get_data(dataset='movielens-small',
 
     elif 'netflix' in dataset:
 
-        # if 'full' in dataset:
-        #     dataset = 
-        # print("#### -> ", dataset)
-
         print("--> loading netflix data")
 
         r_cols = ['user_id', 'movie_id', 'rating', 'date']

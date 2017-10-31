@@ -225,11 +225,11 @@ if __name__ == "__main__":
 
     ## 1M Configs
     if 'movielens-1M' in path:
-        maxN = 250
-        maxM = 150
+        maxN = 250000
+        maxM = 150000
         minibatch_size = 10000
         skip_connections = True
-        units = 32
+        units = 64
         latent_features = 5
         learning_rate = 0.001
 
@@ -295,7 +295,7 @@ if __name__ == "__main__":
                 }
             },
            'lr':learning_rate,
-           'sample_mode':'uniform_over_dense_values' # by_row_column_density, uniform_over_dense_values
+           'sample_mode':'by_row_column_density' # by_row_column_density, uniform_over_dense_values
            
     }
     
