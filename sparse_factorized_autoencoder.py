@@ -74,23 +74,21 @@ def main(opts):
     with tf.Graph().as_default():
         # with tf.device('/gpu:0'):
             mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
-            mask_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr')
+            mask_indices_tr = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_tr')
             mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
 
             mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
-            mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
-            mask_indices_tr_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr_val')
+            mask_indices_val = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_val')
+            mask_indices_tr_val = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_tr_val')
             mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
 
             with tf.variable_scope("encoder"):
                 tr_dict = {'input':mat_values_tr,
                            'mask_indices':mask_indices_tr,
-                           'shape':mat_shape_tr,
                            'units':1}
 
                 val_dict = {'input':mat_values_tr,
                             'mask_indices':mask_indices_tr,
-                            'shape':mat_shape_tr,
                             'units':1}
 
                 encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
@@ -101,12 +99,10 @@ def main(opts):
                 tr_dict = {'nvec':out_enc_tr['nvec'],
                            'mvec':out_enc_tr['mvec'],
                            'mask_indices':mask_indices_tr,
-                           'shape':out_enc_tr['shape'],  ## Passing in shape to be used in sparse functions 
                            'units':out_enc_tr['units']}
                 val_dict = {'nvec':out_enc_val['nvec'],
                             'mvec':out_enc_val['mvec'],
                             'mask_indices':mask_indices_tr_val,
-                            'shape':out_enc_val['shape'],
                             'units':out_enc_val['units']}
 
                 decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
@@ -153,8 +149,7 @@ def main(opts):
                         mask_indices = dense_array_to_sparse(data['mask_tr'][inds_])['indices'][:,0:2]
 
                         tr_dict = {mat_values_tr:mat_values,
-                                    mask_indices_tr:mask_indices,
-                                    mat_shape_tr:[maxN,maxM,1]}
+                                    mask_indices_tr:mask_indices}
                         
                         _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -170,8 +165,7 @@ def main(opts):
                         batchM = np.max(mask_indices[:,1]) + 1
 
                         tr_dict = {mat_values_tr:mat_values,
-                                    mask_indices_tr:mask_indices,
-                                    mat_shape_tr:[batchN,batchM,1]}
+                                    mask_indices_tr:mask_indices}
                         
                         _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -188,7 +182,6 @@ def main(opts):
                 ## Validation Loss
                 val_dict = {mat_values_tr:data['mat_values_tr'],
                             mask_indices_tr:data['mask_indices_tr'],
-                            mat_shape_tr:[N,M,1],
                             mat_values_val:data['mat_values_tr_val'],
                             mask_indices_val:data['mask_indices_val'],
                             mask_indices_tr_val:data['mask_indices_tr_val']}
@@ -215,12 +208,12 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 10000
-        maxM = 10000
-        minibatch_size = 10000000
+        maxN = 100
+        maxM = 100
+        minibatch_size = 100000000
         skip_connections = False
         units = 32
-        latent_features = 900
+        latent_features = 5
         learning_rate = 0.001
 
     ## 1M Configs
@@ -277,7 +270,7 @@ if __name__ == "__main__":
                     # 'activation':tf.nn.sigmoid,
                     'activation':tf.nn.relu,
                     # 'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
-                    'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
+                    'pool_mode':'max',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                     'skip_connections':False,
@@ -295,7 +288,7 @@ if __name__ == "__main__":
                 }
             },
            'lr':learning_rate,
-           'sample_mode':'by_row_column_density' # by_row_column_density, uniform_over_dense_values
+           'sample_mode':'uniform_over_dense_values' # by_row_column_density, uniform_over_dense_values
            
     }
     
