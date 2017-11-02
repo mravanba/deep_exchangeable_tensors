@@ -75,12 +75,10 @@ def main(opts):
         # with tf.device('/gpu:0'):
             mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
             mask_indices_tr = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_tr')
-            mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
 
             mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
             mask_indices_val = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_val')
             mask_indices_tr_val = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_tr_val')
-            mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
 
             with tf.variable_scope("encoder"):
                 tr_dict = {'input':mat_values_tr,
@@ -161,8 +159,6 @@ def main(opts):
 
                         mat_values = data['mat_values_tr'][sample_]
                         mask_indices = data['mask_indices_tr'][sample_]
-                        batchN = np.max(mask_indices[:,0]) + 1
-                        batchM = np.max(mask_indices[:,1]) + 1
 
                         tr_dict = {mat_values_tr:mat_values,
                                     mask_indices_tr:mask_indices}
@@ -210,7 +206,7 @@ if __name__ == "__main__":
     if 'movielens-100k' in path:
         maxN = 100
         maxM = 100
-        minibatch_size = 100000000
+        minibatch_size = 200000000
         skip_connections = False
         units = 32
         latent_features = 5
