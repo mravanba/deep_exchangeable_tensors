@@ -133,11 +133,6 @@ def matrix_dense(
             output = layer_params.get('activation')(output)
         if layer_params.get('drop_mask', True):
             mask = None
-        ##.....
-        # else:
-        #     output = mask * output
-        ##.....
-
         if skip_connections and mat is not None:
             config_string += "with skip connections"
             output = output + mat
@@ -256,10 +251,10 @@ def matrix_sparse(
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=1, keep_dims=True) / norm_M
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=None, keep_dims=True) / norm_NM
 
-            theta_0 = model_variable("theta_0",shape=[K, units],trainable=True, dtype=tf.float32)
-            theta_1 = model_variable("theta_1",shape=[K, units],trainable=True, dtype=tf.float32)
-            theta_2 = model_variable("theta_2",shape=[K, units],trainable=True, dtype=tf.float32)
-            theta_3 = model_variable("theta_3",shape=[K, units],trainable=True, dtype=tf.float32)
+            theta_0 = model_variable("theta_0", shape=[K,units], trainable=True, dtype=tf.float32)
+            theta_1 = model_variable("theta_1", shape=[K,units], trainable=True, dtype=tf.float32)
+            theta_2 = model_variable("theta_2", shape=[K,units], trainable=True, dtype=tf.float32)
+            theta_3 = model_variable("theta_3", shape=[K,units], trainable=True, dtype=tf.float32)
             
             output = sparse_tensordot_sparse(mat_values, theta_0, K)
             output_0 = tf.tensordot(mat_marg_0, theta_1, axes=[[2],[0]]) # 1 x M x units
