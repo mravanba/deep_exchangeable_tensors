@@ -197,8 +197,6 @@ def sparse_tensor_broadcast_dense_add(x_values, y, mask_indices, num_features, b
         new_vals = tf.cast(tf.gather_nd(tf.reshape(y, shape=[-1,num_features]), temp_inds), tf.float32)
         vals = tf.reshape(x_values, shape=[-1,num_features]) + new_vals
         vals = tf.reshape(vals, shape=[num_vals])
-        # vals = tf.reshape(vals, shape=[-1])
-        # return tf.SparseTensorValue(inds, vals, shape)
 
     elif broadcast_axis is 1:
         temp_inds = tf.strided_slice(inds, begin=[0,0], end=[num_vals,2], strides=[num_features,1])
@@ -206,13 +204,10 @@ def sparse_tensor_broadcast_dense_add(x_values, y, mask_indices, num_features, b
         new_vals = tf.cast(tf.gather_nd(tf.reshape(y, shape=[-1,num_features]), temp_inds), tf.float32)
         vals = tf.reshape(x_values, shape=[-1,num_features]) + new_vals
         vals = tf.reshape(vals, shape=[num_vals])
-        # vals = tf.reshape(vals, shape=[-1])
-        # return tf.SparseTensorValue(inds, vals, shape)
 
     else:
         vals = tf.reshape(x_values, shape=[-1,num_features])
         vals = tf.reshape(tf.add(vals, y), shape=[-1])
-        # return tf.SparseTensorValue(inds, vals, shape)
     return vals
 
 
