@@ -238,18 +238,18 @@ def matrix_sparse(
         output =  tf.convert_to_tensor(0, np.float32)
 
         if mat_values is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
-            norm_N = sparse_marginalize_mask(mask_indices, axis=0, keep_dims=True) + eps
-            norm_M = sparse_marginalize_mask(mask_indices, axis=1, keep_dims=True) + eps
-            norm_NM = sparse_marginalize_mask(mask_indices, axis=None, keep_dims=True) + eps
+            norm_N = sparse_marginalize_mask(mask_indices, axis=0, keep_dims=True) + eps # 1, M, 1
+            norm_M = sparse_marginalize_mask(mask_indices, axis=1, keep_dims=True) + eps # N, 1, 1
+            norm_NM = sparse_marginalize_mask(mask_indices, axis=None, keep_dims=True) + eps # 1, 1, 1
 
             if 'max' in layer_params.get('pool_mode', 'max') and mask_indices is None:
-                mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, mode='max', axis=0, keep_dims=True)
+                mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, mode='max', axis=0, keep_dims=True) 
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, mode='max', axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, mode='max', axis=None, keep_dims=True)
             else:
-                mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=0, keep_dims=True) / norm_N
-                mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=1, keep_dims=True) / norm_M
-                mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=None, keep_dims=True) / norm_NM
+                mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=0, keep_dims=True) / norm_N # 1 x M x K
+                mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=1, keep_dims=True) / norm_M # N x 1 x K
+                mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, mode='sum', axis=None, keep_dims=True) / norm_NM # 1 x 1 x K
 
             theta_0 = model_variable("theta_0", shape=[K,units], trainable=True, dtype=tf.float32)
             theta_1 = model_variable("theta_1", shape=[K,units], trainable=True, dtype=tf.float32)

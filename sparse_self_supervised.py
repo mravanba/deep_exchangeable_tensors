@@ -65,6 +65,11 @@ def main(opts):
     N, M, num_features = data['mat_shape']
     maxN, maxM = opts['maxN'], opts['maxM']
 
+    if 'netflix' in path:
+        device_for_validation = '/cpu:0'
+    else:
+        device_for_validation = '/gpu:0'
+
     if N < maxN: maxN = N
     if M < maxM: maxM = M
 
@@ -84,43 +89,45 @@ def main(opts):
             mat_values_tr_noisy = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr_noisy')
             mask_indices_tr = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_tr')
             mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
-
-            mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
-            mat_values_val_noisy = tf.placeholder(tf.float32, shape=[None], name='mat_values_val_noisy')
-            mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
-            mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
-
             noise_mask_tr = tf.placeholder(tf.int64, shape=(None), name='noise_mask_tr')
-            noise_mask_val = tf.placeholder(tf.int64, shape=(None), name='noise_mask_val')
+
+            with tf.device(device_for_validation):
+                mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
+                mat_values_val_noisy = tf.placeholder(tf.float32, shape=[None], name='mat_values_val_noisy')
+                mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
+                mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
+                noise_mask_val = tf.placeholder(tf.int64, shape=(None), name='noise_mask_val')
+            
+            
             
 
             with tf.variable_scope("network"):
                 tr_dict = {'input':mat_values_tr_noisy,
                            'mask_indices':mask_indices_tr,
-                           'shape':mat_shape_tr,
                            'units':1}
 
-                val_dict = {'input':mat_values_val_noisy,
-                            'mask_indices':mask_indices_val,
-                            'shape':mat_shape_val,
-                            'units':1}
+                with tf.device(device_for_validation):
+                    val_dict = {'input':mat_values_val_noisy,
+                                'mask_indices':mask_indices_val,
+                                'units':1}
 
                 network = Model(layers=opts['network'], layer_defaults=opts['defaults'], verbose=2) #define the network
                 out_tr = network.get_output(tr_dict)['input'] #build the network
-                out_val = network.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#get network output, reusing the neural net
+                
+                with tf.device(device_for_validation):
+                    out_val = network.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#get network output, reusing the neural net
             
 
             #loss and training
-            # rec_loss = rec_loss_fn_sp(mat_values_tr, mask_indices_tr, out_tr, tf.ones(tf.shape(mat_values_tr)))
             rec_loss = dae_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'])
             reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization            
-            
-            rec_loss_val = dae_loss_fn_sp(mat_values_val, out_val, noise_mask_val, 1)
-            
             total_loss = rec_loss + reg_loss
 
+            with tf.device(device_for_validation):
+                rec_loss_val = dae_loss_fn_sp(mat_values_val, out_val, noise_mask_val, 1)
+
             train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
-            sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+            sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
             sess.run(tf.global_variables_initializer())
 
             if 'by_row_column_density' in opts['sample_mode']:
@@ -156,8 +163,7 @@ def main(opts):
                         tr_dict = {mat_values_tr:mat_values,
                                     mat_values_tr_noisy:mat_values_noisy,
                                     mask_indices_tr:mask_indices,
-                                    noise_mask_tr:noise_mask,
-                                    mat_shape_tr:[maxN,maxM,1]}
+                                    noise_mask_tr:noise_mask}
 
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -169,8 +175,6 @@ def main(opts):
 
                         mat_values = data['mat_values_tr'][sample_]
                         mask_indices = data['mask_indices_tr'][sample_]
-                        batchN = mask_indices[minibatch_size-1,0] + 1
-                        batchM = np.max(mask_indices[:,1]) + 1
 
                         noise_mask = np.random.choice([0,1], size=mask_indices.shape[0], p=[1-noise_rate, noise_rate]) # which entries to 'corrupt' by dropping out 
                         no_noise_mask = np.ones_like(noise_mask) - noise_mask
@@ -179,15 +183,12 @@ def main(opts):
                         tr_dict = {mat_values_tr:mat_values,
                                     mat_values_tr_noisy:mat_values_noisy,
                                     mask_indices_tr:mask_indices,
-                                    noise_mask_tr:noise_mask,
-                                    mat_shape_tr:[batchN,batchM,1]}
+                                    noise_mask_tr:noise_mask}
 
                         _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
                         loss_tr_ += np.sqrt(bloss_)
                         rec_loss_tr_ += np.sqrt(brec_loss_)
-
-
 
                 else:
                     print('\nERROR - unknown <sample_mode> in main()\n')
@@ -196,28 +197,27 @@ def main(opts):
 
                 loss_tr_ /= iters_per_epoch
                 rec_loss_tr_ /= iters_per_epoch
-
-                ## Validation Loss
-                # noise_mask = np.random.choice([0,1], size=data['mask_indices_val'].shape[0], p=[1-noise_rate, noise_rate]) # which entries to 'corrupt' by dropping out 
-                noise_mask = data['mask_tr_val_split'] # 1's for validation entries 
-                no_noise_mask = np.ones_like(noise_mask) - noise_mask
-                mat_values_noisy = data['mat_values_tr_val'] * no_noise_mask
-
-                val_dict = {mat_values_val:data['mat_values_tr_val'],
-                            mat_values_val_noisy:mat_values_noisy,
-                            mask_indices_val:data['mask_indices_tr_val'],
-                            noise_mask_val:noise_mask,
-                            mat_shape_val:[N,M,1]}
-
-                bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
-
-
-                loss_val_ += np.sqrt(bloss_)
-                if loss_val_ < min_loss: # keep track of the best validation loss 
-                    min_loss = loss_val_
-                    min_loss_epoch = ep
                 losses['train'].append(loss_tr_)
-                losses['valid'].append(loss_val_)
+
+                ## Validation Loss  
+                with tf.device(device_for_validation):
+                    noise_mask = data['mask_tr_val_split'] # 1's for validation entries 
+                    no_noise_mask = np.ones_like(noise_mask) - noise_mask
+                    mat_values_noisy = data['mat_values_tr_val'] * no_noise_mask
+
+                    val_dict = {mat_values_val:data['mat_values_tr_val'],
+                                mat_values_val_noisy:mat_values_noisy,
+                                mask_indices_val:data['mask_indices_tr_val'],
+                                noise_mask_val:noise_mask}
+
+                    bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
+
+                    loss_val_ += np.sqrt(bloss_)
+                    if loss_val_ < min_loss: # keep track of the best validation loss 
+                        min_loss = loss_val_
+                        min_loss_epoch = ep
+                    
+                    losses['valid'].append(loss_val_)
 
                 print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))            
     return losses    
@@ -225,9 +225,9 @@ def main(opts):
 if __name__ == "__main__":
 
     # path = 'movielens-TEST'
-    path = 'movielens-100k'
-    # path = 'movielens-1M'
-    # path = 'netflix/6m'    
+    # path = 'movielens-100k'
+    path = 'movielens-1M'
+    # path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
@@ -237,15 +237,15 @@ if __name__ == "__main__":
         skip_connections = True
         units = 32
         learning_rate = 0.001
-        dae_noise_rate = .5 # drop out this proportion of input values 
-        dae_loss_alpha = .5  # proportion of loss assigned to predicting droped out values 
+        dae_noise_rate = .1 # drop out this proportion of input values 
+        dae_loss_alpha = .9  # proportion of loss assigned to predicting droped out values 
 
 
     ## 1M Configs
     if 'movielens-1M' in path:
         maxN = 1000
         maxM = 1000
-        minibatch_size = 1000
+        minibatch_size = 2000000
         skip_connections = True
         units = 32
         learning_rate = 0.001
@@ -255,10 +255,12 @@ if __name__ == "__main__":
     if 'netflix/6m' in path:
         maxN = 300
         maxM = 300
-        minibatch_size = 1000
+        minibatch_size = 1000000
         skip_connections = True
         units = 32
         learning_rate = 0.001
+        dae_noise_rate = .5 # drop out this proportion of input values 
+        dae_loss_alpha = .5  # proportion of loss assigned to predicting droped out values 
 
 
     opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
