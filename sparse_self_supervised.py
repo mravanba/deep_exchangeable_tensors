@@ -225,8 +225,8 @@ def main(opts):
 if __name__ == "__main__":
 
     # path = 'movielens-TEST'
-    # path = 'movielens-100k'
-    path = 'movielens-1M'
+    path = 'movielens-100k'
+    # path = 'movielens-1M'
     # path = 'netflix/6m'
 
     ## 100k Configs
@@ -238,7 +238,7 @@ if __name__ == "__main__":
         units = 32
         learning_rate = 0.001
         dae_noise_rate = .1 # drop out this proportion of input values 
-        dae_loss_alpha = .9  # proportion of loss assigned to predicting droped out values 
+        dae_loss_alpha = .01  # proportion of loss assigned to predicting droped out values 
 
 
     ## 1M Configs
@@ -263,7 +263,7 @@ if __name__ == "__main__":
         dae_loss_alpha = .5  # proportion of loss assigned to predicting droped out values 
 
 
-    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
