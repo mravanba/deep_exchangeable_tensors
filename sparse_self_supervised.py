@@ -225,20 +225,20 @@ def main(opts):
 if __name__ == "__main__":
 
     # path = 'movielens-TEST'
-    path = 'movielens-100k'
+    # path = 'movielens-100k'
     # path = 'movielens-1M'
-    # path = 'netflix/6m'
+    path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
         maxN = 10000
         maxM = 10000
-        minibatch_size = 5000000
+        minibatch_size = 2000000
         skip_connections = True
         units = 32
         learning_rate = 0.001
-        dae_noise_rate = .1 # drop out this proportion of input values 
-        dae_loss_alpha = .01  # proportion of loss assigned to predicting droped out values 
+        dae_noise_rate = .01 # drop out this proportion of input values 
+        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
 
 
     ## 1M Configs
@@ -246,21 +246,31 @@ if __name__ == "__main__":
         maxN = 1000
         maxM = 1000
         minibatch_size = 2000000
-        skip_connections = True
+        skip_connections = False
         units = 32
         learning_rate = 0.001
-        dae_noise_rate = .1 # drop out this proportion of input values 
-        dae_loss_alpha = .6  # proportion of loss assigned to predicting droped out values 
+        dae_noise_rate = .01 # drop out this proportion of input values 
+        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
 
     if 'netflix/6m' in path:
         maxN = 300
         maxM = 300
-        minibatch_size = 1000000
+        minibatch_size = 2000000
         skip_connections = True
         units = 32
         learning_rate = 0.001
-        dae_noise_rate = .5 # drop out this proportion of input values 
-        dae_loss_alpha = .5  # proportion of loss assigned to predicting droped out values 
+        dae_noise_rate = .1 # drop out this proportion of input values 
+        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
+
+    if 'netflix/full' in path:
+        maxN = 300
+        maxM = 300
+        minibatch_size = 2000000
+        skip_connections = True
+        units = 32
+        learning_rate = 0.001
+        dae_noise_rate = .01 # drop out this proportion of input values 
+        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
 
 
     opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
@@ -289,7 +299,7 @@ if __name__ == "__main__":
                     # 'activation':tf.nn.sigmoid,
                     'activation':tf.nn.relu,
                     # 'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
-                    'pool_mode':'max',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
+                    'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                     'skip_connections':False,

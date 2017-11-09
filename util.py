@@ -271,6 +271,8 @@ def get_data(dataset='movielens-small',
         _, movies = np.unique(ratings.movie_id, return_inverse=True)
         n_movies = np.max(movies) + 1
 
+        print("     loading", n_ratings, "ratings for", n_users, "users on", n_movies, "movies...")
+
         split = np.random.choice([0,1], size=n_ratings, p=(train + valid, test))
 
         ratings_tr_val = ratings[split==0]

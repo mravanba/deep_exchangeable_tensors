@@ -206,7 +206,7 @@ if __name__ == "__main__":
     if 'movielens-100k' in path:
         maxN = 100
         maxM = 100
-        minibatch_size = 200000000
+        minibatch_size = 1900
         skip_connections = False
         units = 32
         latent_features = 5
@@ -225,7 +225,7 @@ if __name__ == "__main__":
     if 'netflix/6m' in path:
         maxN = 300
         maxM = 300
-        minibatch_size = 1000
+        minibatch_size = 1000000
         skip_connections = True
         units = 32
         latent_features = 5
@@ -246,17 +246,17 @@ if __name__ == "__main__":
            'data_path':path,
            'output_file':'output',
            'encoder':[
-               {'type':'matrix_sparse', 'units':units},
-               # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
-               # {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.sigmoid},
+               {'type':'matrix_dropout_sparse', 'rate':0.1},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections, 'activation':tf.nn.relu},
+               {'type':'matrix_dropout_sparse', 'rate':0.1},
                {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
-               {'type':'matrix_sparse', 'units':units},
+               {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.sigmoid},
                # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections, 'activation':tf.nn.relu},
                # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
