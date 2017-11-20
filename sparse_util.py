@@ -60,14 +60,6 @@ def dense_tensor_to_sparse_values(x, mask_indices, num_features):
     inds = expand_tensor_indices(mask_indices, num_features)
     return tf.gather_nd(x, inds)
 
-def dense_vector_to_sparse_values(x, mask_indices):   
-    if x.shape[0] == 1:
-        # vals = tf.gather(tf.transpose(x, perm=[1,0,2]), mask_indices[:,1])
-        vals = tf.gather(x, mask_indices[:,1], axis=1)
-    elif x.shape[1] == 1:
-        vals = tf.gather(x, mask_indices[:,0])
-    return tf.reshape(vals, [-1])
-
 
 def sparse_tensor_to_dense(x_sp, shape=None):
     if shape is None:
@@ -85,6 +77,13 @@ def expand_array_indices(mask_indices, num_features):
     inds = np.concatenate((inds, inds_exp), axis=1)
     return inds
 
+def dense_vector_to_sparse_values(x, mask_indices):   
+    if x.shape[0] == 1:
+        vals = tf.gather(tf.transpose(x, perm=[1,0,2]), mask_indices[:,1])
+        # vals = tf.gather(x, mask_indices[:,1], axis=1)
+    elif x.shape[1] == 1:
+        vals = tf.gather(x, mask_indices[:,0])
+    return tf.reshape(vals, [-1])
 
 # Given tensor mask_indices in [N,M], return equivalent indices in [N,M,num_features]
 def expand_tensor_indices(mask_indices, num_features):
@@ -102,7 +101,7 @@ def expand_tensor_indices(mask_indices, num_features):
 # Equivalent to tf.reduce_ sum/max, but for sparse tensors.
 # mask_indices are [N,M] non-zero indices
 # Returns a dense tensor
-def sparse_reduce(mask_indices, values, num_features, mode='sum', axis=None, keep_dims=False):
+def sparse_reduce(mask_indices, values, num_features, mode='sum', shape=None, axis=None, keep_dims=False):
     if 'sum' in mode:
         op = tf.unsorted_segment_sum
     elif 'max' in mode:
@@ -115,7 +114,10 @@ def sparse_reduce(mask_indices, values, num_features, mode='sum', axis=None, kee
     if axis is 0:
         inds = tf.cast(mask_indices[:,1], dtype=tf.int32)
         vals = tf.reshape(values, shape=[-1,num_features])
-        num_segments = tf.cast(tf.reduce_max(mask_indices[:,1]), tf.int32) + 1
+        if shape is None:
+            num_segments = tf.cast(tf.reduce_max(mask_indices[:,1]), tf.int32) + 1
+        else:
+            num_segments = shape[1]
         out = op(vals, inds, num_segments=num_segments)
         if 'max' in mode: ## Hack to avoid tensorflow bug where 0 values are set to large negative number
             out = tf.where(tf.greater(out, -200000000), out, tf.zeros_like(out))
@@ -123,8 +125,11 @@ def sparse_reduce(mask_indices, values, num_features, mode='sum', axis=None, kee
             out = tf.expand_dims(out, axis=0)
         return out
     elif axis is 1:
-        inds = tf.cast(mask_indices[:,0], dtype=tf.int32)   
-        num_segments = tf.cast(tf.reduce_max(mask_indices[:,0]), tf.int32) + 1
+        inds = tf.cast(mask_indices[:,0], dtype=tf.int32)
+        if shape is None:
+            num_segments = tf.cast(tf.reduce_max(mask_indices[:,0]), tf.int32) + 1
+        else:
+            num_segments = shape[0]
         vals = tf.reshape(values, shape=[-1,num_features])
         out = op(vals, inds, num_segments=num_segments)
         if 'max' in mode: ## Hack to avoid tensorflow bug where 0 values are set to large negative number
@@ -150,11 +155,14 @@ def sparse_reduce(mask_indices, values, num_features, mode='sum', axis=None, kee
 
 # Equivalent to tf.reduce_sum applied to 2d mask
 # Returns a dense tensor
-def sparse_marginalize_mask(mask_indices, axis=None, keep_dims=True):
+def sparse_marginalize_mask(mask_indices, shape=None, axis=None, keep_dims=True):
     mask_indices = tf.cast(mask_indices, dtype=tf.float32) # cast so computation can be done on gpu
     if axis is 0:
         inds = tf.cast(mask_indices[:,1], dtype=tf.int32)
-        num_segments = tf.cast(tf.reduce_max(mask_indices[:,1]), tf.int32) + 1
+        if shape is None:
+            num_segments = tf.cast(tf.reduce_max(mask_indices[:,1]), tf.int32) + 1
+        else:
+            num_segments = shape[1]
         marg = tf.unsorted_segment_sum(tf.ones_like(inds, dtype=tf.float32), inds, num_segments)
         marg = tf.cast(tf.expand_dims(marg, axis=1), dtype=tf.float32)
         if keep_dims:
@@ -162,7 +170,10 @@ def sparse_marginalize_mask(mask_indices, axis=None, keep_dims=True):
         return marg
     elif axis is 1:
         inds = tf.cast(mask_indices[:,0], dtype=tf.int32)
-        num_segments = tf.cast(tf.reduce_max(mask_indices[:,0]), tf.int32) + 1
+        if shape is None:
+            num_segments = tf.cast(tf.reduce_max(mask_indices[:,0]), tf.int32) + 1
+        else:
+            num_segments = shape[0]
         marg = tf.unsorted_segment_sum(tf.ones_like(inds, dtype=tf.float32), inds, num_segments)
         marg = tf.cast(tf.expand_dims(marg, axis=1), dtype=tf.float32)
         if keep_dims:
