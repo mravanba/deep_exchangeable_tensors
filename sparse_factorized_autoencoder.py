@@ -40,7 +40,16 @@ def sample_dense_values_uniform(mask_indices, minibatch_size, iters_per_epoch):
     for n in range(iters_per_epoch):
         sample = np.random.choice(num_vals, size=minibatch_size, replace=False)
         yield sample
-        # yield np.sort(sample)
+
+def sample_dense_values_uniform_val(mask_indices, mask_tr_val_split, minibatch_size, iters_per_epoch):
+    num_vals_tr = mask_indices[mask_tr_val_split == 0].shape[0]
+    num_vals_val = mask_indices[mask_tr_val_split == 1].shape[0]
+    minibatch_size_tr = np.minimum(int(.9 * minibatch_size), num_vals_tr)
+    minibatch_size_val = np.minimum(int(.1 * minibatch_size), num_vals_val)
+    for n in range(iters_per_epoch):
+        sample_tr = np.random.choice(num_vals_tr, size=minibatch_size_tr, replace=False)
+        sample_val = np.random.choice(num_vals_val, size=minibatch_size_val, replace=False)
+        yield sample_tr, sample_val
 
 
 def rec_loss_fn_sp(mat_values, mask_indices, rec_values, mask_split):
@@ -83,11 +92,14 @@ def main(opts):
             with tf.variable_scope("encoder"):
                 tr_dict = {'input':mat_values_tr,
                            'mask_indices':mask_indices_tr,
-                           'units':1}
+                           'units':1,
+                           'shape':[N,M]}
 
+                
                 val_dict = {'input':mat_values_tr,
                             'mask_indices':mask_indices_tr,
-                            'units':1}
+                            'units':1,
+                            'shape':[N,M]}
 
                 encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
                 out_enc_tr = encoder.get_output(tr_dict) #build the encoder
@@ -97,11 +109,14 @@ def main(opts):
                 tr_dict = {'nvec':out_enc_tr['nvec'],
                            'mvec':out_enc_tr['mvec'],
                            'mask_indices':mask_indices_tr,
-                           'units':out_enc_tr['units']}
+                           'units':out_enc_tr['units'],
+                           'shape':out_enc_tr['shape']}
+
                 val_dict = {'nvec':out_enc_val['nvec'],
                             'mvec':out_enc_val['mvec'],
                             'mask_indices':mask_indices_tr_val,
-                            'units':out_enc_val['units']}
+                            'units':out_enc_val['units'],
+                            'shape':out_enc_val['shape']}
 
                 decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
                 out_dec_tr = decoder.get_output(tr_dict)#build it
@@ -116,7 +131,8 @@ def main(opts):
             rec_loss_val = rec_loss_fn_sp(mat_values_val, mask_indices_val, out_val, data['mask_tr_val_split'])
             total_loss = rec_loss + reg_loss
 
-            train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
+            # train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
+            train_step = tf.train.RMSPropOptimizer(opts['lr']).minimize(total_loss)
             sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
             sess.run(tf.global_variables_initializer())
 
@@ -167,6 +183,8 @@ def main(opts):
 
                         loss_tr_ += np.sqrt(bloss_)
                         rec_loss_tr_ += np.sqrt(brec_loss_)
+
+
                 else:
                     print('\nERROR - unknown <sample_mode> in main()\n')
                     return
@@ -175,7 +193,7 @@ def main(opts):
                 loss_tr_ /= iters_per_epoch
                 rec_loss_tr_ /= iters_per_epoch
 
-                ## Validation Loss
+                ## Validation Loss        
                 val_dict = {mat_values_tr:data['mat_values_tr'],
                             mask_indices_tr:data['mask_indices_tr'],
                             mat_values_val:data['mat_values_tr_val'],
@@ -184,11 +202,11 @@ def main(opts):
 
                 bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
 
-
                 loss_val_ += np.sqrt(bloss_)
                 if loss_val_ < min_loss: # keep track of the best validation loss 
                     min_loss = loss_val_
                     min_loss_epoch = ep
+
                 losses['train'].append(loss_tr_)
                 losses['valid'].append(loss_val_)
 
@@ -200,24 +218,24 @@ if __name__ == "__main__":
     # path = 'movielens-TEST'
     path = 'movielens-100k'
     # path = 'movielens-1M'
-    # path = 'netflix/6m'    
+    # path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
         maxN = 100
         maxM = 100
-        minibatch_size = 1900
-        skip_connections = False
-        units = 32
+        minibatch_size = 2000
+        skip_connections = True
+        units = 64
         latent_features = 5
-        learning_rate = 0.001
+        learning_rate = 0.005
 
     ## 1M Configs
     if 'movielens-1M' in path:
         maxN = 250000
         maxM = 150000
         minibatch_size = 10000
-        skip_connections = True
+        skip_connections = False
         units = 64
         latent_features = 5
         learning_rate = 0.001
@@ -225,11 +243,11 @@ if __name__ == "__main__":
     if 'netflix/6m' in path:
         maxN = 300
         maxM = 300
-        minibatch_size = 1000000
-        skip_connections = True
-        units = 32
+        minibatch_size = 5000000
+        skip_connections = False
+        units = 16
         latent_features = 5
-        learning_rate = 0.001
+        learning_rate = 0.005
 
 
     opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
@@ -247,17 +265,17 @@ if __name__ == "__main__":
            'output_file':'output',
            'encoder':[
                {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.sigmoid},
-               {'type':'matrix_dropout_sparse', 'rate':0.1},
-               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections, 'activation':tf.nn.relu},
-               {'type':'matrix_dropout_sparse', 'rate':0.1},
+               {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.relu},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
                {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.sigmoid},
-               # {'type':'matrix_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections, 'activation':tf.nn.relu},
-               # {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.relu},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)
@@ -269,7 +287,7 @@ if __name__ == "__main__":
                     'pool_mode':'max',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
-                    'skip_connections':False,
+                    'skip_connections':skip_connections,
                 },
                 'dense':{#not used
                     'activation':tf.nn.elu,
@@ -280,7 +298,7 @@ if __name__ == "__main__":
                     'pool_mode':'max',
                 },
                 'matrix_dropout_sparse':{
-                    'rate':.001,
+                    'rate':.3,
                 }
             },
            'lr':learning_rate,
