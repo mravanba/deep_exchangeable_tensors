@@ -55,9 +55,27 @@ def dae_loss_fn_sp(mat_values, rec_values, noise_mask, alpha):
     eps = 1e-10
     return alpha * loss_c / (tf.reduce_sum(noise_mask) + eps) + (1-alpha) * loss_u / (tf.reduce_sum(no_noise_mask) + eps)
 
+def ordinal_hinge_loss_fn_sp(mat_values, rec_values, noise_mask, alpha, num_values):
+    # num_values = noise_mask.shape[0]
+    noise_mask = tf.cast(noise_mask, tf.float32)
+    no_noise_mask = tf.ones_like(noise_mask) - noise_mask
+    categories = tf.cast(np.reshape(np.tile(range(1,6), reps=num_values), [-1,5]), tf.float32)
+    mat_values = tf.transpose(tf.reshape(tf.tile(mat_values, [5]), [-1,num_values]))
+    greater = tf.cast(tf.greater_equal(categories, mat_values), tf.float32)
+    less = tf.cast(tf.less_equal(categories, mat_values), tf.float32)
+    not_equal = tf.cast(tf.not_equal(categories, mat_values), tf.float32)
+    rec_values = tf.cast(tf.transpose(tf.reshape(tf.tile(rec_values, [5]), [-1,num_values])), tf.float32)
+    rec_values = rec_values * (greater - less)
+    rec_values = (rec_values + 1) * not_equal
+    out = categories * (less - greater) + rec_values
+    out = tf.maximum(out, tf.zeros_like(out))
+    out = tf.reduce_sum(out, axis=1)
+    out_c = out * noise_mask
+    out_u = out * no_noise_mask
+    return alpha * tf.reduce_sum(out_c) + (1-alpha) * tf.reduce_sum(out_u) 
 
 def main(opts):        
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)    
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9) 
     path = opts['data_path']
     data = get_data(path, train=.8, valid=.1, test=.1)
     
@@ -65,22 +83,19 @@ def main(opts):
     N, M, num_features = data['mat_shape']
     maxN, maxM = opts['maxN'], opts['maxM']
 
-    if 'netflix' in path:
-        device_for_validation = '/cpu:0'
-    else:
-        device_for_validation = '/gpu:0'
 
     if N < maxN: maxN = N
     if M < maxM: maxM = M
 
     if opts['verbose'] > 0:
-        print('\nFactorized Autoencoder run settings:')
+        print('\nSelf supervised run settings:')
         print('dataset: ', path)
         print('Exchangable layer pool mode: ', opts['defaults']['matrix_sparse']['pool_mode'])
         print('learning rate: ', opts['lr'])
         print('activation: ', opts['defaults']['matrix_sparse']['activation'])
-        print('maxN: ', opts['maxN'])
-        print('maxM: ', opts['maxM'])
+        print('dae_noise_rate: ', opts['dae_noise_rate'])
+        print('dae_loss_alpha: ', opts['dae_loss_alpha'])
+        print('l2_regularization: ', opts['l2_regularization'])
         print('')
 
     with tf.Graph().as_default():
@@ -91,50 +106,47 @@ def main(opts):
             mat_shape_tr = tf.placeholder(tf.int32, shape=[3], name='mat_shape_tr')
             noise_mask_tr = tf.placeholder(tf.int64, shape=(None), name='noise_mask_tr')
 
-            with tf.device(device_for_validation):
-                mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
-                mat_values_val_noisy = tf.placeholder(tf.float32, shape=[None], name='mat_values_val_noisy')
-                mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
-                mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
-                noise_mask_val = tf.placeholder(tf.int64, shape=(None), name='noise_mask_val')
+            mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
+            mat_values_val_noisy = tf.placeholder(tf.float32, shape=[None], name='mat_values_val_noisy')
+            mask_indices_val = tf.placeholder(tf.int64, shape=[None, 2], name='mask_indices_val')
+            mat_shape_val = tf.placeholder(tf.int32, shape=[3], name='mat_shape_val')
+            noise_mask_val = tf.placeholder(tf.int64, shape=(None), name='noise_mask_val')
             
             
-            
-
             with tf.variable_scope("network"):
                 tr_dict = {'input':mat_values_tr_noisy,
                            'mask_indices':mask_indices_tr,
-                           'units':1}
+                           'units':1,
+                           'shape':[N,M]}
 
-                with tf.device(device_for_validation):
-                    val_dict = {'input':mat_values_val_noisy,
-                                'mask_indices':mask_indices_val,
-                                'units':1}
+                val_dict = {'input':mat_values_val_noisy,
+                            'mask_indices':mask_indices_val,
+                            'units':1,
+                            'shape':[N,M]}
 
                 network = Model(layers=opts['network'], layer_defaults=opts['defaults'], verbose=2) #define the network
                 out_tr = network.get_output(tr_dict)['input'] #build the network
                 
-                with tf.device(device_for_validation):
-                    out_val = network.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#get network output, reusing the neural net
+                out_val = network.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#get network output, reusing the neural net
             
-
-            #loss and training
-            rec_loss = dae_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'])
-            reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization            
-            total_loss = rec_loss + reg_loss
-
-            with tf.device(device_for_validation):
-                rec_loss_val = dae_loss_fn_sp(mat_values_val, out_val, noise_mask_val, 1)
-
-            train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
-            sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
-            sess.run(tf.global_variables_initializer())
 
             if 'by_row_column_density' in opts['sample_mode']:
                 iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
             elif 'uniform_over_dense_values' in opts['sample_mode']:
                 minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
                 iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
+
+            #loss and training
+            rec_loss = dae_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'])
+            # rec_loss = ordinal_hinge_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'], minibatch_size)
+            reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization            
+            total_loss = rec_loss + reg_loss
+
+            rec_loss_val = dae_loss_fn_sp(mat_values_val, out_val, noise_mask_val, 1)
+
+            train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
+            sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
+            sess.run(tf.global_variables_initializer())
             
             min_loss = 5
             min_loss_epoch = 0
@@ -199,46 +211,53 @@ def main(opts):
                 rec_loss_tr_ /= iters_per_epoch
                 losses['train'].append(loss_tr_)
 
-                ## Validation Loss  
-                with tf.device(device_for_validation):
-                    noise_mask = data['mask_tr_val_split'] # 1's for validation entries 
-                    no_noise_mask = np.ones_like(noise_mask) - noise_mask
-                    mat_values_noisy = data['mat_values_tr_val'] * no_noise_mask
+                ## Validation Loss
+                for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr_val'], minibatch_size, iters_per_epoch), total=iters_per_epoch):
+                    mat_values = data['mat_values_tr_val'][sample_]
+                    mask_indices = data['mask_indices_tr_val'][sample_]
 
-                    val_dict = {mat_values_val:data['mat_values_tr_val'],
+                    noise_mask = data['mask_tr_val_split'][sample_] # 1's for validation entries 
+                    no_noise_mask = np.ones_like(noise_mask) - noise_mask
+                    mat_values_noisy = mat_values * no_noise_mask
+
+                    val_dict = {mat_values_val:mat_values,
                                 mat_values_val_noisy:mat_values_noisy,
-                                mask_indices_val:data['mask_indices_tr_val'],
+                                mask_indices_val:mask_indices,
                                 noise_mask_val:noise_mask}
 
                     bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
 
                     loss_val_ += np.sqrt(bloss_)
-                    if loss_val_ < min_loss: # keep track of the best validation loss 
-                        min_loss = loss_val_
-                        min_loss_epoch = ep
-                    
-                    losses['valid'].append(loss_val_)
 
+
+                loss_val_ /= iters_per_epoch
+                losses['valid'].append(loss_val_)
+                
+                if loss_val_ < min_loss: # keep track of the best validation loss 
+                    min_loss = loss_val_
+                    min_loss_epoch = ep
+                
                 print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))            
     return losses    
 
 if __name__ == "__main__":
 
     # path = 'movielens-TEST'
-    # path = 'movielens-100k'
+    path = 'movielens-100k'
     # path = 'movielens-1M'
-    path = 'netflix/6m'
+    # path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
         maxN = 10000
         maxM = 10000
-        minibatch_size = 2000000
+        minibatch_size = 200
         skip_connections = True
-        units = 32
+        units = 128
         learning_rate = 0.001
-        dae_noise_rate = .01 # drop out this proportion of input values 
-        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
+        dae_noise_rate = .1 # drop out this proportion of input values 
+        dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
+        l2_regularization = .00001
 
 
     ## 1M Configs
@@ -246,21 +265,23 @@ if __name__ == "__main__":
         maxN = 1000
         maxM = 1000
         minibatch_size = 2000000
-        skip_connections = False
-        units = 32
-        learning_rate = 0.001
-        dae_noise_rate = .01 # drop out this proportion of input values 
-        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
-
-    if 'netflix/6m' in path:
-        maxN = 300
-        maxM = 300
-        minibatch_size = 2000000
         skip_connections = True
         units = 32
         learning_rate = 0.001
         dae_noise_rate = .1 # drop out this proportion of input values 
-        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
+        dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
+        l2_regularization = .00001
+
+    if 'netflix/6m' in path:
+        maxN = 300
+        maxM = 300
+        minibatch_size = 500000
+        skip_connections = True
+        units = 128
+        learning_rate = 0.0005
+        dae_noise_rate = .1 # drop out this proportion of input values 
+        dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
+        l2_regularization = .00001
 
     if 'netflix/full' in path:
         maxN = 300
@@ -269,11 +290,12 @@ if __name__ == "__main__":
         skip_connections = True
         units = 32
         learning_rate = 0.001
-        dae_noise_rate = .01 # drop out this proportion of input values 
-        dae_loss_alpha = .2  # proportion of loss assigned to predicting droped out values 
+        dae_noise_rate = .1 # drop out this proportion of input values 
+        dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
+        l2_regularization = .00001
 
 
-    opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 100,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
@@ -290,6 +312,7 @@ if __name__ == "__main__":
                {'type':'matrix_sparse', 'units':units},
                # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                # {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':1, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                ],
@@ -301,7 +324,7 @@ if __name__ == "__main__":
                     # 'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
-                    'regularizer': tf.contrib.keras.regularizers.l2(.00001),
+                    'regularizer': tf.contrib.keras.regularizers.l2(l2_regularization),
                     'skip_connections':False,
                 },
                 'dense':{#not used
@@ -317,6 +340,7 @@ if __name__ == "__main__":
            'sample_mode':'uniform_over_dense_values', # by_row_column_density, uniform_over_dense_values
            'dae_noise_rate':dae_noise_rate,
            'dae_loss_alpha':dae_loss_alpha,
+           'l2_regularization':l2_regularization,
     }
     
     main(opts)
