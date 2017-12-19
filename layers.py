@@ -300,8 +300,10 @@ def matrix_sparse(
             output += r_bias - tf.reduce_mean(r_bias)
             output += c_bias - tf.reduce_mean(c_bias)
         
-        if kwargs.get('activation', None) is not None:
-                output = kwargs.get('activation')(output)
+        if layer_params.get('activation', None) is not None:
+            if verbose == 1:
+                print("Applying activation: %s" % layer_params["activation"])
+            output = layer_params.get('activation')(output)
 
         if skip_connections and mat_values is not None and K == units:
             output = output + mat_values
