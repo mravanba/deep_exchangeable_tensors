@@ -42,6 +42,10 @@ def matrix_dense(
         config_string = "Using the following terms: "
         sign = 1
 
+        overparam = layer_params.get('overparam', False)
+        indn = inputs['indn']
+        indm = inputs['indm']
+
         if layer_params.get('bias', True):
             bias = model_variable("bias",shape=[units],trainable=True)
             output += sign*bias
@@ -76,15 +80,33 @@ def matrix_dense(
             
             if layer_params.get('theta_1', True):
                 config_string += "theta 1, "
-                theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
-                output += sign*tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
+
+                if overparam:
+                    MM = inputs['total_shape'][1]
+                    theta_1 = tf.get_variable('theta_1', shape=[MM,K,units], trainable=True)
+                    theta_1 = tf.gather(theta_1, indm, axis=0)
+                    theta_1.set_shape([M,K,units]) 
+                    output += sign*tf.einsum('ijk,jkl->ijl', mat_marg_0, theta_1) # 1 x M x units
+                else:
+                    theta_1 = model_variable("theta_1",shape=[K, units],trainable=True)
+                    output += sign*tf.tensordot(mat_marg_0, theta_1, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # 1 x M x units
+
                 output.set_shape([N,M,units])#because of current tensorflow bug!! 
                 sign *= -1
 
             if layer_params.get('theta_2', True):  
-                config_string += "theta 2, "     
-                theta_2 = model_variable("theta_2",shape=[K, units],trainable=True)   
-                output +=  sign *tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
+                config_string += "theta 2, "
+
+                if overparam:                    
+                    NN = inputs['total_shape'][0]                    
+                    theta_2 = tf.get_variable('theta_2', shape=[NN,K,units], trainable=True)
+                    theta_2 = tf.gather(theta_2, indn, axis=0)
+                    theta_2.set_shape([N,K,units])
+                    output += sign*tf.einsum('ijk,ikl->ijl', mat_marg_1, theta_2)
+                else:
+                    theta_2 = model_variable("theta_2", shape=[K,units], trainable=True)   
+                    output +=  sign *tf.tensordot(mat_marg_1, theta_2, axes=tf.convert_to_tensor([[2],[0]], dtype=np.int32)) # N x 1 x units
+
                 output.set_shape([N,M,units])#because of current tensorflow bug!!  
                 sign *= -1
 
@@ -138,7 +160,7 @@ def matrix_dense(
             output = output + mat
 
         print(config_string)
-        outdic = {'input':output, 'mask':mask}
+        outdic = {'input':output, 'mask':mask, 'total_shape':inputs['total_shape'], 'indn':indn, 'indm':indm}
         return outdic
 
 
@@ -170,7 +192,7 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
             nvec = tf.reduce_sum(inp, axis=1, keep_dims=True)/norm_1
             mvec = tf.reduce_sum(inp, axis=0, keep_dims=True)/norm_0
 
-        outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask}
+        outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'total_shape':inputs['total_shape']}
         return outdic    
 
 
@@ -189,7 +211,8 @@ def matrix_dropout(inputs,#dropout along both axes
     out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
     out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)
 
-    return {'input':out, 'mask':mask}    
+    outdic = {'input':out, 'mask':mask, 'total_shape':inputs['total_shape']}   
+    return outdic
 
 
 # def dense(

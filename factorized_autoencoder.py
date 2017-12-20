@@ -112,12 +112,21 @@ def main(opts):
         mat_val = tf.placeholder(tf.float32, shape=(N, M, num_features), name='mat')##data matrix for validation: 
         mask_val = tf.placeholder(tf.float32, shape=(N, M, 1), name='mask_val')#the entries not present during training
         mask_tr_val = tf.placeholder(tf.float32, shape=(N, M, 1), name='mask_tr_val')#both training and validation entries
+
+        indn = tf.placeholder(tf.int32, shape=(None), name='indn')
+        indm = tf.placeholder(tf.int32, shape=(None), name='indm')
         
         with tf.variable_scope("encoder"):
             tr_dict = {'input':mat,
-                       'mask':mask_tr}
+                       'mask':mask_tr,
+                       'total_shape':[N,M],
+                       'indn':indn,
+                       'indm':indm}
             val_dict = {'input':mat_val,
-                        'mask':mask_tr_val}
+                        'mask':mask_tr_val,
+                        'total_shape':[N,M],
+                        'indn':indn,
+                        'indm':indm}
 
             encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], verbose=2) #define the encoder
 
@@ -128,10 +137,16 @@ def main(opts):
         with tf.variable_scope("decoder"):
             tr_dict = {'nvec':out_enc_tr['nvec'],
                        'mvec':out_enc_tr['mvec'],
-                       'mask':out_enc_tr['mask']}
+                       'mask':out_enc_tr['mask'],
+                       'total_shape':[N,M],
+                       'indn':indn,
+                       'indm':indm}
             val_dict = {'nvec':out_enc_val['nvec'],
                         'mvec':out_enc_val['mvec'],
-                        'mask':out_enc_val['mask']}
+                        'mask':out_enc_val['mask'],
+                        'total_shape':[N,M],
+                        'indn':indn,
+                        'indm':indm}
 
             decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
 
@@ -152,8 +167,7 @@ def main(opts):
         train_step = tf.train.AdamOptimizer(opts['lr']).minimize(total_loss)
         merged = tf.summary.merge_all()
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-        train_writer = tf.summary.FileWriter('logs/train',
-                                            sess.graph)
+        train_writer = tf.summary.FileWriter('logs/train', sess.graph)
         sess.run(tf.global_variables_initializer())
 
         iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
@@ -171,7 +185,9 @@ def main(opts):
 
                 tr_dict = {mat:standardize(input_data[inds_]),
                            mask_tr:data['mask_tr'][inds_mask],
-                           mat_raw:raw_input_data[inds_mask]}
+                           mat_raw:raw_input_data[inds_mask],
+                           indn:indn_,
+                           indm:indm_}
 
                 if opts.get("loss", "mse") == "mse":
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
@@ -189,7 +205,9 @@ def main(opts):
             val_dict = {mat_val:standardize(input_data),
                         mask_val:data['mask_val'],
                         mask_tr_val:data['mask_tr'],
-                        mat_raw_valid:raw_input_data}
+                        mat_raw_valid:raw_input_data,
+                        indn:np.arange(N),
+                        indm:np.arange(M)}
 
             if merged is not None:
                 summary, = sess.run([merged], feed_dict=tr_dict)
@@ -223,10 +241,10 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        # maxN = 943
-        # maxM = 1682
-        maxN = 100
-        maxM = 100
+        maxN = 943
+        maxM = 1682
+        # maxN = 100
+        # maxM = 100
         skip_connections = True
         units = 32
         latent_features = 75
@@ -255,21 +273,21 @@ if __name__ == "__main__":
            'loss':'ce',
            'data_path':path,
            'encoder':[
-               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True},
+               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True, 'overparam':True},
                #{'type':'matrix_dropout'},
-               #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':True, 'overparam':True},
                #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True, 'overparam':True},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
                #{'type':'matrix_dense', 'units':units},
                #{'type':'matrix_dropout'},
-               #{'type':'matrix_dense', 'units':units, 'skip_connections':False},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
                #{'type':'matrix_dropout'},
-                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False}
+               {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False, 'overparam':False}
             ],
-            'defaults':{#default values for each layer type (see layer.py)s
+            'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
                     #'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
@@ -279,6 +297,7 @@ if __name__ == "__main__":
                     'kernel_initializer': tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32),# tf.random_normal_initializer(0, .01),
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                     'skip_connections':False,
+                    'overparam':False, # whether to use the different parameters for each movie/user 
                 },
                 'dense':{#not used
                     'activation':tf.nn.elu, 
