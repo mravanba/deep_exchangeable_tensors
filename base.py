@@ -62,7 +62,8 @@ class Model(object): #constructs a series of connected layers from layers.py fro
                         del layer_params['type'] #because type is not used when passing layer keywords to the actual method in the layers.py module
                         new_product = getattr(ly, layer['type'])(new_product, layer_params, verbose=self._verbose, scope=l_scope, is_training=is_training)#get the output of the layer by calling the appropriate method in layers.py
                         if verbose > 0:
-                            helper.print_dims(prefix="layer "+str(l)+" ("+layer['type']+") ", **new_product)
+                            if new_product is not None:
+                                helper.print_dims(prefix="layer "+str(l)+" ("+layer['type']+") ", **new_product)
                 else:
                     print("layer type %s doesn't exist!" % (layer['type']))
                     raise

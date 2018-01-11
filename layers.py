@@ -53,9 +53,9 @@ def matrix_dense(
 
         if mat is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties                
             N,M,K = mat.get_shape().as_list()
-            norm_N = np.float32(N)
-            norm_M = np.float32(M)
-            norm_NM = np.float32(N*M)
+            # norm_N = np.float32(N)
+            # norm_M = np.float32(M)
+            # norm_NM = np.float32(N*M)
             if mask is not None:                    
                 mat = mat * mask
                 norm_N = tf.reduce_sum(mask, axis=0, keep_dims=True) + eps# 1, M, 1
@@ -159,9 +159,32 @@ def matrix_dense(
             config_string += "with skip connections"
             output = output + mat
 
+        # output.set_shape([N,M,units])
+        # print("##### --> ", output)
         print(config_string)
         outdic = {'input':output, 'mask':mask, 'total_shape':inputs['total_shape'], 'indn':indn, 'indm':indm}
         return outdic
+
+
+def predict_mean(
+        inputs,
+        layer_params,
+        reuse = None,
+        scope = None,
+        verbose = 1,
+        **kwargs
+        ):
+
+    mat = inputs['input'] #N x M x K
+    mask = inputs.get('mask', None)#N x M
+
+    mean = 3.511
+
+    output = mean * tf.ones_like(mat)
+
+    outdic = {'input':output, 'mask':mask}
+    return outdic
+    
 
 
 def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
@@ -207,11 +230,14 @@ def matrix_dropout(inputs,#dropout along both axes
     mode = layer_params.get('mode', 'dense')
     inp = inputs['input']
     mask = inputs.get('mask', None)
-    N, M, K = inp.get_shape().as_list()
+    # N, M, K = inp.get_shape().as_list()
+    N = tf.shape(inp)[0]
+    M = tf.shape(inp)[1]
+
     out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
     out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)
 
-    outdic = {'input':out, 'mask':mask, 'total_shape':inputs['total_shape']}   
+    outdic = {'input':out, 'mask':mask, 'total_shape':inputs['total_shape'], 'indn':inputs['indn'], 'indm':inputs['indm']}   
     return outdic
 
 

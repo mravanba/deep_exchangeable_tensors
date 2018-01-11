@@ -8,6 +8,7 @@ from sparse_util import sparse_tensordot_sparse, get_mask_indices
 import math
 import time
 from tqdm import tqdm
+from copy import deepcopy
 
 def masked_crossentropy(mat, mask, rec):
     '''
@@ -58,6 +59,22 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
             yield ind_n, ind_m 
 
 
+
+def sample_masked_entries(user_inds, movie_inds, maxN, maxM):
+    N = user_inds.shape[0]
+    M = movie_inds.shape[0]
+    
+    if N < maxN: maxN = N
+    if M < maxM: maxM = M
+    
+    for n in range(N // maxN):
+        for m in range(M // maxM):
+            ind_n = np.random.choice(user_inds, size=maxN, replace=False)
+            ind_m = np.random.choice(movie_inds, size=maxM, replace=False)
+            yield ind_n, ind_m
+
+
+
 def rec_loss_fn(mat, mask, rec):
     return (tf.reduce_sum(((mat - rec)**2)*mask)) / tf.reduce_sum(mask)#average l2-error over non-zero entries
 
@@ -65,18 +82,18 @@ def rec_loss_fn(mat, mask, rec):
 def main(opts):
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.2, test=.001)
+    data = get_data(path, train=.8, valid=.2, test=.0)
     
     standardize = inverse_trans = lambda x: x # defaults
     if opts.get("loss", "mse") == "mse":
-        input_data = data['mat_tr_val']
-        raw_input_data = data['mat_tr_val'].copy()
+        input_data = data['mat']
+        raw_input_data = data['mat'].copy()
         if opts.get('normalize', False):
             print("Normalizing data")
             standardize, inverse_trans = normalize(input_data)
     else:
-        raw_input_data = data['mat_tr_val'].copy()
-        input_data = to_indicator(data['mat_tr_val'])
+        raw_input_data = data['mat'].copy()
+        input_data = to_indicator(data['mat'])
 
     loss_fn = get_loss_function(opts.get("loss", "mse"))
     #build encoder and decoder and use VAE loss
@@ -86,6 +103,12 @@ def main(opts):
 
     if N < maxN: maxN = N
     if M < maxM: maxM = M
+
+    N_users = np.sum(data['users_split'])
+    M_movies = np.sum(data['movies_split'])
+
+    if N_users < maxN: maxN = N_users
+    if M_movies < maxM: maxM = M_movies
 
     if opts['verbose'] > 0:
         print('\nRun Settings:')
@@ -101,17 +124,17 @@ def main(opts):
         
 
     with tf.Graph().as_default():
-        mat_raw = tf.placeholder(tf.float32, shape=(maxN, maxM, 1), name='mat_raw')#data matrix for training
-        mat_raw_valid = tf.placeholder(tf.float32, shape=(N, M, 1), name='mat_raw_valid')#data matrix for training
+        mat_raw = tf.placeholder(tf.float32, shape=(None, None, 1), name='mat_raw')#data matrix for training
+        mat_raw_valid = tf.placeholder(tf.float32, shape=(None, None, 1), name='mat_raw_valid')#data matrix for training
 
-        mat = tf.placeholder(tf.float32, shape=(maxN, maxM, num_features), name='mat')#data matrix for training
-        mask_tr = tf.placeholder(tf.float32, shape=(maxN, maxM, 1), name='mask_tr')
+        mat = tf.placeholder(tf.float32, shape=(None, None, num_features), name='mat')#data matrix for training
+        mask_tr = tf.placeholder(tf.float32, shape=(None, None, 1), name='mask_tr')
         # For validation, since we need less memory (forward pass only), 
         # we are feeding the whole matrix. This is only feasible for this smaller dataset. 
         # In the long term we could perform validation on CPU to avoid memory problems
-        mat_val = tf.placeholder(tf.float32, shape=(N, M, num_features), name='mat')##data matrix for validation: 
-        mask_val = tf.placeholder(tf.float32, shape=(N, M, 1), name='mask_val')#the entries not present during training
-        mask_tr_val = tf.placeholder(tf.float32, shape=(N, M, 1), name='mask_tr_val')#both training and validation entries
+        mat_val = tf.placeholder(tf.float32, shape=(None, None, num_features), name='mat')##data matrix for validation: 
+        mask_val = tf.placeholder(tf.float32, shape=(None, None, 1), name='mask_val')#the entries not present during training
+        mask_tr_val = tf.placeholder(tf.float32, shape=(None, None, 1), name='mask_tr_val')#both training and validation entries
 
         indn = tf.placeholder(tf.int32, shape=(None), name='indn')
         indm = tf.placeholder(tf.int32, shape=(None), name='indm')
@@ -143,10 +166,21 @@ def main(opts):
                        'indm':indm}
             val_dict = {'nvec':out_enc_val['nvec'],
                         'mvec':out_enc_val['mvec'],
-                        'mask':out_enc_val['mask'],
+                        'mask':out_enc_val['mask'],                        
                         'total_shape':[N,M],
                         'indn':indn,
                         'indm':indm}
+            # tr_dict = {'input':mat,
+            #            'mask':mask_tr,
+            #            'total_shape':[N,M],
+            #            'indn':indn,
+            #            'indm':indm}
+            # val_dict = {'input':mat_val,
+            #             'mask':mask_tr_val,
+            #             'total_shape':[N,M],
+            #             'indn':indn,
+            #             'indm':indm}
+
 
             decoder = Model(layers=opts['decoder'], layer_defaults=opts['defaults'], verbose=2)#define the decoder
 
@@ -157,7 +191,7 @@ def main(opts):
         rec_loss = loss_fn(inverse_trans(mat), mask_tr, inverse_trans(out_tr))# reconstruction loss
         reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization
         rec_loss_val = loss_fn(inverse_trans(mat_val), mask_val, inverse_trans(out_val))
-        total_loss = rec_loss + reg_loss 
+        total_loss = rec_loss + reg_loss
 
         rng = tf.range(1,6,1, dtype=tf.float32)
         idx = tf.convert_to_tensor([[2],[0]], dtype=np.int32)
@@ -170,21 +204,24 @@ def main(opts):
         train_writer = tf.summary.FileWriter('logs/train', sess.graph)
         sess.run(tf.global_variables_initializer())
 
-        iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
+        # iters_per_epoch = (N//maxN) * (M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
+        iters_per_epoch = (N_users//maxN) * (M_movies//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
         
-        min_loss = 5
-        min_loss_epoch = 0
+        min_loss_tr = 5
+        min_loss_epoch_tr = 0
+        loss_threshold = 1.13 # Short circuit the training loop if validation loss gets low enough  
 
+        start_time = time.time()
         for ep in range(opts['epochs']):
             begin = time.time()
             loss_tr_, rec_loss_tr_, loss_val_, mse_tr = 0,0,0,0
-            for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
+
+            for indn_, indm_ in tqdm(sample_masked_entries(data['user_inds_tr'], data['movie_inds_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,range(num_features))
-                inds_mask = np.ix_(indn_,indm_, [0])
-                #inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
+                inds_mask = np.ix_(indn_,indm_,[0])                
 
                 tr_dict = {mat:standardize(input_data[inds_]),
-                           mask_tr:data['mask_tr'][inds_mask],
+                           mask_tr:data['mask_ratings'][inds_mask],
                            mat_raw:raw_input_data[inds_mask],
                            indn:indn_,
                            indm:indm_}
@@ -194,33 +231,69 @@ def main(opts):
                     loss_tr_ += np.sqrt(bloss_)
                     rec_loss_tr_ += np.sqrt(brec_loss_)
                 elif opts.get("loss", "mse") == "ce":
-                    _, bloss_, brec_loss_, mse = sess.run([train_step, total_loss, rec_loss, mse_loss_train], 
-                                                          feed_dict=tr_dict)
+                    _, bloss_, brec_loss_, mse = sess.run([train_step, total_loss, rec_loss, mse_loss_train],feed_dict=tr_dict)
                     loss_tr_ += np.sqrt(mse)
                     rec_loss_tr_ += brec_loss_
 
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
+            if loss_tr_ < min_loss_tr: # keep track of the best validation loss 
+                min_loss_tr = loss_tr_
+                min_loss_epoch_tr = ep
+
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t minimum training loss {:.3f} at epoch {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, min_loss_tr, min_loss_epoch_tr))
+
+            if loss_tr_ < loss_threshold: # When trainnig loss is sufficiently low, check validation 
+                break
+
+        print("training for {:d} epochs took {:.1f} final training loss {:.3f} \t best training loss {:.3f} at epoch {:d}".format(ep, time.time() - start_time, loss_tr_, min_loss_tr, min_loss_epoch_tr))    
+
+        users_inds_val = np.random.permutation(data['user_inds_val'])
+        movies_inds_val = np.random.permutation(data['movie_inds_val'])
+
+        iters = 10 # How many 'mixed' submatricies to try validation on 
+
+        NN = np.sum(1 - data['users_split']) # Number of users not used in training
+        MM = np.sum(1 - data['movies_split']) # Number of movies not used in training
+
+        users_cutoffs = np.ndarray.astype(np.ceil(np.linspace(0, NN, iters)), np.int32)
+        movies_cutoffs = np.ndarray.astype(np.ceil(np.linspace(0, MM, iters)), np.int32)
+
+        mask_tr_ = data['mask_ratings'] * np.matmul(data['users_split'][:,None], data['movies_split'][None,:])[:,:,None]
+        mask_val_ = data['mask_ratings'] * (1-data['users_split'][:,None,None]) * (1-data['movies_split'][None,:,None])
+        
+
+        for i in reversed(range(iters)):
+            loss_val_ = 0
+
+            users_cutoff = users_cutoffs[i]
+            movies_cutoff = movies_cutoffs[i]
+
+            users_overlap = users_inds_val[0:users_cutoff]
+            users_val_ = deepcopy(data['users_split'][:,None])            
+            users_val_[users_overlap,:] = 1            
+
+            movies_overlap = movies_inds_val[0:movies_cutoff]
+            movies_val_ = deepcopy(data['movies_split'][None,:])
+            movies_val_[:,movies_overlap] = 1
+
+            mask_predict = np.matmul(users_val_, movies_val_)[:,:,None]
+            mask_tr_val_ = data['mask_ratings'] * mask_predict * (1 - mask_val_)
+
             val_dict = {mat_val:standardize(input_data),
-                        mask_val:data['mask_val'],
-                        mask_tr_val:data['mask_tr'],
+                        mask_val:mask_val_,
+                        mask_tr_val:mask_tr_val_,
                         mat_raw_valid:raw_input_data,
                         indn:np.arange(N),
                         indm:np.arange(M)}
 
-            if merged is not None:
-                summary, = sess.run([merged], feed_dict=tr_dict)
-                train_writer.add_summary(summary, ep)
             if opts.get("loss", "mse") == "mse":
                 bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
             else:
                 bloss_true, bloss_ = sess.run([rec_loss_val, mse_loss_valid], feed_dict=val_dict)
-            loss_val_ += np.sqrt(bloss_)
-            if loss_val_ < min_loss: # keep track of the best validation loss 
-                min_loss = loss_val_
-                min_loss_epoch = ep
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch))
+            loss_val_ = np.sqrt(bloss_)
+            print("validation loss using {:.1f}% user and {:.1f}% movie overlap: {:.8f}".format(users_cutoff / NN * 100, movies_cutoff / MM * 100, loss_val_))
 
 
 if __name__ == "__main__":
@@ -232,12 +305,13 @@ if __name__ == "__main__":
 
     ## TEST configurations 
     if 'movielens-TEST' in path:
-        maxN = 100  
+        # np.set_printoptions(threshold=np.nan)
+        maxN = 100
         maxM = 100
         skip_connections = True
         units = 32
         latent_features = 5
-        learning_rate = 0.001
+        learning_rate = 0.01
 
     ## 100k Configs
     if 'movielens-100k' in path:
@@ -247,7 +321,7 @@ if __name__ == "__main__":
         # maxM = 100
         skip_connections = True
         units = 32
-        latent_features = 75
+        latent_features = 20
         learning_rate = 0.01
 
     ## 1M Configs
@@ -255,12 +329,12 @@ if __name__ == "__main__":
         maxN = 320
         maxM = 220
         skip_connections = True
-        units = 54
+        units = 32
         latent_features = 10
         learning_rate = 0.001
 
     
-    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 30000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
@@ -270,22 +344,31 @@ if __name__ == "__main__":
            'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'loss':'ce',
+           'loss':'mse',
            'data_path':path,
            'encoder':[
-               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True, 'overparam':True},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':True, 'overparam':True},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True, 'overparam':True},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True, 'overparam':False},
+               # {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
+               # {'type':'matrix_dropout'},
+               # {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
+               # {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True, 'overparam':False},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
-               #{'type':'matrix_dense', 'units':units},
-               #{'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units},
+               {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False, 'overparam':False}
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False, 'overparam':False},
+               # {'type':'predict_mean'}
             ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
@@ -308,8 +391,9 @@ if __name__ == "__main__":
                     'pool_mode':'mean',
                 },
                 'matrix_dropout':{
-                    'rate':.2,
-                },                
+                    'rate':.5, #.6
+                },
+                'predict_mean':{},                
             },
            'lr':learning_rate,
     }
