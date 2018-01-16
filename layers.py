@@ -211,7 +211,7 @@ def matrix_dropout(inputs,#dropout along both axes
     out = tf.layers.dropout(inp, rate = rate, noise_shape=[N,1,1], training=is_training)
     out = tf.layers.dropout(out, rate = rate, noise_shape=[1,M,1], training=is_training)
 
-    outdic = {'input':out, 'mask':mask, 'total_shape':inputs['total_shape']}   
+    outdic = {'input':out, 'mask':mask, 'total_shape':inputs['total_shape'], 'indn':inputs['indn'], 'indm':inputs['indm']}   
     return outdic
 
 

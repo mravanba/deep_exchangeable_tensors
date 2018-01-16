@@ -7,6 +7,8 @@ from util import get_data, to_indicator, to_number
 from sparse_util import sparse_tensordot_sparse, get_mask_indices
 import math
 import time
+import datetime
+import os
 from tqdm import tqdm
 
 def masked_crossentropy(mat, mask, rec):
@@ -69,14 +71,14 @@ def main(opts):
     
     standardize = inverse_trans = lambda x: x # defaults
     if opts.get("loss", "mse") == "mse":
-        input_data = data['mat_tr_val']
-        raw_input_data = data['mat_tr_val'].copy()
+        input_data = data['mat']
+        raw_input_data = data['mat'].copy()
         if opts.get('normalize', False):
             print("Normalizing data")
             standardize, inverse_trans = normalize(input_data)
     else:
-        raw_input_data = data['mat_tr_val'].copy()
-        input_data = to_indicator(data['mat_tr_val'])
+        raw_input_data = data['mat'].copy()
+        input_data = to_indicator(data['mat'])
 
     loss_fn = get_loss_function(opts.get("loss", "mse"))
     #build encoder and decoder and use VAE loss
@@ -172,16 +174,16 @@ def main(opts):
 
         iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM) # a bad heuristic: the whole matrix is in expectation covered in each epoch
         
-        min_loss = 5
-        min_loss_epoch = 0
+        min_loss_tr = 5
+        min_loss_epoch_tr = 0
 
+        start_time = time.time()
         for ep in range(opts['epochs']):
             begin = time.time()
-            loss_tr_, rec_loss_tr_, loss_val_, mse_tr = 0,0,0,0
+            loss_tr_, rec_loss_tr_, mse_tr = 0,0,0
             for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM), total=iters_per_epoch):#go over mini-batches
                 inds_ = np.ix_(indn_,indm_,range(num_features))
                 inds_mask = np.ix_(indn_,indm_, [0])
-                #inds_ = np.ix_(indn_,indm_,[0])#select a sub-matrix given random indices for users/movies
 
                 tr_dict = {mat:standardize(input_data[inds_]),
                            mask_tr:data['mask_tr'][inds_mask],
@@ -202,25 +204,115 @@ def main(opts):
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
 
-            val_dict = {mat_val:standardize(input_data),
-                        mask_val:data['mask_val'],
-                        mask_tr_val:data['mask_tr'],
-                        mat_raw_valid:raw_input_data,
-                        indn:np.arange(N),
-                        indm:np.arange(M)}
+            if loss_tr_ < min_loss_tr: # keep track of the best training loss 
+                min_loss_tr = loss_tr_
+                min_loss_epoch_tr = ep
 
-            if merged is not None:
-                summary, = sess.run([merged], feed_dict=tr_dict)
-                train_writer.add_summary(summary, ep)
-            if opts.get("loss", "mse") == "mse":
-                bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
-            else:
-                bloss_true, bloss_ = sess.run([rec_loss_val, mse_loss_valid], feed_dict=val_dict)
-            loss_val_ += np.sqrt(bloss_)
-            if loss_val_ < min_loss: # keep track of the best validation loss 
-                min_loss = loss_val_
-                min_loss_epoch = ep
-            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_,  loss_val_, min_loss, min_loss_epoch))
+            print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t minimum training loss: {:.3f} at epoch: {:d}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, min_loss_tr, min_loss_epoch_tr))
+
+
+            if (ep + 1) % opts['validate_every'] == 0: ## Try validating every X epochs
+                iters = opts['num_alphas']
+        
+                users_inds_tr = np.random.permutation(data['user_inds_tr'])
+                movies_inds_tr = np.random.permutation(data['movie_inds_tr'])
+
+                users_inds_val = np.random.permutation(data['user_inds_val'])
+                movies_inds_val = np.random.permutation(data['movie_inds_val'])
+
+                user_inds = np.concatenate((users_inds_tr, users_inds_val))
+                movie_inds = np.concatenate((movies_inds_tr, movies_inds_val))
+
+                N_tr = users_inds_tr.shape[0]
+                M_tr = movies_inds_tr.shape[0]
+
+                user_starts = np.ndarray.astype(np.ceil(np.linspace(0, N - N_tr, iters)), np.int32) ## Start point for user indices to validate on
+                user_ends = user_starts + N_tr ## End point for user indices to validate on
+
+                movie_starts = np.ndarray.astype(np.ceil(np.linspace(0, M - M_tr, iters)), np.int32) ## Start point for movie indices to validate on
+                movie_ends = movie_starts + M_tr ## End point for movie indices to validate on
+
+                val_losses = []
+                alphas = []
+
+                for i in range(iters):
+                    user_start = user_starts[i]
+                    user_end = user_ends[i]
+
+                    movie_start = movie_starts[i]
+                    movie_end = movie_ends[i]
+
+                    user_inds_val_ = user_inds[user_start:user_end]
+                    movie_inds_val_ = movie_inds[movie_start:movie_end]
+
+                    users_split = np.zeros(shape=[N], dtype=np.int32)
+                    users_split[user_inds_val_] = 1 ## Do validation on these users 
+
+                    movies_split = np.zeros(shape=[M], dtype=np.int32)
+                    movies_split[movie_inds_val_] = 1 ## Do validation on these movies 
+
+                    mask_eval_ = data['mask_eval'] * np.matmul(users_split[:,None], movies_split[None,:])[:,:,None]
+
+                    val_dict = {mat_val:standardize(input_data),
+                            mask_val:mask_eval_,
+                            mask_tr_val:data['mask_tr'],
+                            mat_raw_valid:raw_input_data,
+                            indn:np.arange(N),
+                            indm:np.arange(M)}
+
+                    if merged is not None:
+                        summary, = sess.run([merged], feed_dict=tr_dict)
+                        train_writer.add_summary(summary, ep)
+                    if opts.get("loss", "mse") == "mse":
+                        bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
+                    else:
+                        bloss_true, bloss_ = sess.run([rec_loss_val, mse_loss_valid], feed_dict=val_dict)
+                    loss_val_ = np.sqrt(bloss_)        
+                    
+                    val_losses.append(loss_val_)
+                    alphas.append((1 - max(movie_end - M_tr - 1, 0) / M_tr) * 100)
+
+                    print("validation loss with {:3.0f}% overlap after {:d} epochs:   {:.8f}".format((1 - max(movie_end - M_tr - 1, 0) / M_tr) * 100, ep+1, loss_val_))
+                    
+
+                dir_name = 'loss_data' ## For plotting losses at different alpha values
+                if not os.path.exists(dir_name):
+                    os.makedirs(dir_name)
+                file_name = str(ep+1) + '.R'
+                path = os.path.join(dir_name, file_name)
+                with open(path, 'w+') as file:
+                    file.write("# %s\n" % datetime.datetime.now())
+                    file.write("# skip_connections: %s\n" % opts['skip_connections'])
+                    file.write("# units: %s\n" % opts['units'])
+                    file.write("# latent_features: %s\n" % opts['latent_features'])
+                    file.write("# dropout_rate: %s\n" % opts['dropout_rate'])
+                    file.write("# learning_rate: %s\n" % opts['learning_rate'])
+                    file.write("# encoder: %s\n" % opts['encoder'])
+                    file.write("# decoder: %s\n" % opts['decoder'])
+                    file.write("\n\n")
+                    file.write("# Best training loss {:.3f} at epoch {:d}\n".format(min_loss_tr, min_loss_epoch_tr))
+                    file.write("\n\n")
+                
+                    file.write("loss <- c(")
+                    for i, loss in enumerate(val_losses):
+                        file.write("%s" % loss)
+                        if i != iters - 1:
+                            file.write(", ")
+                    file.write(")\n\n")
+
+                    file.write("alpha <- c(")
+                    for i, alpha in enumerate(alphas):
+                        file.write("%s" % alpha)
+                        if i != iters - 1:
+                            file.write(", ")
+                    file.write(")\n\n")
+
+                    file.write('plot(alpha, loss, main="Validation loss after %s training epochs")\n' % str(ep+1))
+                    file.write('lines(alpha, loss)')
+
+
+        print("training for {:d} epochs took {:.1f} final training loss {:.3f} \t best training loss {:.3f} at epoch {:d}".format(ep+1, time.time() - start_time, loss_tr_, min_loss_tr, min_loss_epoch_tr))
+
 
 
 if __name__ == "__main__":
@@ -232,23 +324,28 @@ if __name__ == "__main__":
 
     ## TEST configurations 
     if 'movielens-TEST' in path:
+        np.set_printoptions(threshold=np.nan, linewidth=100)
         maxN = 100  
         maxM = 100
         skip_connections = True
         units = 32
         latent_features = 5
+        dropout_rate = 0.5
         learning_rate = 0.001
 
     ## 100k Configs
     if 'movielens-100k' in path:
         maxN = 943
         maxM = 1682
-        # maxN = 100
-        # maxM = 100
+        # maxN = 300
+        # maxM = 300
         skip_connections = True
         units = 32
-        latent_features = 75
-        learning_rate = 0.01
+        latent_features = 10
+        dropout_rate = 0.5
+        learning_rate = 0.001
+        validate_every = 50 # Validate every X epochs
+        num_alphas = 20 # How many different alpha values to try 
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -257,34 +354,40 @@ if __name__ == "__main__":
         skip_connections = True
         units = 54
         latent_features = 10
+        dropout_rate = 0.5
         learning_rate = 0.001
 
     
-    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 5000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           # 'maxM':1682,#num movies per submatrix
            'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            'maxM':maxM,#num movies per submatrix
            'visualize':False,
            'save':False,
-           'loss':'ce',
+           'loss':'mse',
            'data_path':path,
+           'validate_every':validate_every,
+           'num_alphas':num_alphas,
+           'skip_connections':skip_connections,
+           'units':units,
+           'latent_features':latent_features,
+           'dropout_rate':dropout_rate,
+           'learning_rate':learning_rate,
            'encoder':[
-               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True, 'overparam':True},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':True, 'overparam':True},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True, 'overparam':True},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
+               {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True, 'overparam':False},
+               # {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
+               # {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True, 'overparam':False},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
-               #{'type':'matrix_dense', 'units':units},
-               #{'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':False, 'overparam':False},
-               #{'type':'matrix_dropout'},
+               # {'type':'matrix_dense', 'units':units},
+               # {'type':'matrix_dropout'},
+               # {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
+               # {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False, 'overparam':False}
             ],
             'defaults':{#default values for each layer type (see layer.py)
@@ -308,7 +411,7 @@ if __name__ == "__main__":
                     'pool_mode':'mean',
                 },
                 'matrix_dropout':{
-                    'rate':.2,
+                    'rate':dropout_rate,
                 },                
             },
            'lr':learning_rate,
