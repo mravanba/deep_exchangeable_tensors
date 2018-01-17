@@ -339,10 +339,10 @@ if __name__ == "__main__":
         maxM = 1682
         # maxN = 300
         # maxM = 300
-        skip_connections = True
+        skip_connections = False
         units = 32
         latent_features = 10
-        dropout_rate = 0.5
+        dropout_rate = 0.4
         learning_rate = 0.001
         validate_every = 50 # Validate every X epochs
         num_alphas = 20 # How many different alpha values to try 
@@ -378,18 +378,22 @@ if __name__ == "__main__":
            'encoder':[
                {'type':'matrix_dense', 'units':units, "theta_0": True, "theta_3": True, 'overparam':False},
                # {'type':'matrix_dropout'},
-               {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
+               # {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
                # {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':latent_features, 'activation':None, "theta_0": True, "theta_3": True, 'overparam':False},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool'},
                ],
             'decoder':[
-               # {'type':'matrix_dense', 'units':units},
-               # {'type':'matrix_dropout'},
-               # {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
-               # {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units},
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
+               {'type':'matrix_dropout'},
+               {'type':'matrix_dense', 'units':units, 'skip_connections':skip_connections, 'overparam':False},
+               {'type':'matrix_dropout'},
                {'type':'matrix_dense', 'units':1, 'activation':None, 'theta_4': True, 'theta_5': True, "bilinear": False, 'overparam':False}
-            ],
+               ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_dense':{
                     #'activation':tf.nn.tanh,

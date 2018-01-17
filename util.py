@@ -130,7 +130,7 @@ def get_data(dataset='movielens-small',
         return data
 
     elif 'movielens-100k' in dataset:
-        beta = .8
+        beta = .7
 
         r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
         path = os.path.join(data_folder,'ml-100k/u1.base')

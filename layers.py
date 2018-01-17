@@ -267,7 +267,7 @@ def matrix_sparse(
             norm_M = sparse_marginalize_mask(mask_indices, shape=shape, axis=1, keep_dims=True) + eps # N, 1, 1
             norm_NM = sparse_marginalize_mask(mask_indices, shape=shape, axis=None, keep_dims=True) + eps # 1, 1, 1
 
-            if 'max' in layer_params.get('pool_mode', 'max') and mask_indices is None:
+            if 'max' in layer_params.get('pool_mode', 'max'):
                 mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=0, keep_dims=True) 
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=None, keep_dims=True)
@@ -358,10 +358,14 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
         theta_n = model_variable("theta_n", shape=[units_in,units_in], trainable=True, dtype=tf.float32)
         theta_m = model_variable("theta_m", shape=[units_in,units_in], trainable=True, dtype=tf.float32)
         
-        norm_0 = sparse_marginalize_mask(mask_indices, shape=shape, axis=0, keep_dims=True) + eps
-        norm_1 = sparse_marginalize_mask(mask_indices, shape=shape, axis=1, keep_dims=True) + eps
-        nvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=1, keep_dims=True) / norm_1
-        mvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=0, keep_dims=True) / norm_0
+        if pool_mode is 'mean':
+            norm_0 = sparse_marginalize_mask(mask_indices, shape=shape, axis=0, keep_dims=True) + eps
+            norm_1 = sparse_marginalize_mask(mask_indices, shape=shape, axis=1, keep_dims=True) + eps
+            nvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=1, keep_dims=True) / norm_1
+            mvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=0, keep_dims=True) / norm_0
+        else:
+            nvec = sparse_reduce(mask_indices, inp_values, units_in, mode=pool_mode, shape=shape, axis=1, keep_dims=True)
+            mvec = sparse_reduce(mask_indices, inp_values, units_in, mode=pool_mode, shape=shape, axis=0, keep_dims=True)
 
         nvec = tf.tensordot(nvec, theta_n, axes=1)
         nvec.set_shape([N,1,units_in])#because of current tensorflow bug!!
