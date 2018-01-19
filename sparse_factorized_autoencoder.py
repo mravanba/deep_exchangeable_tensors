@@ -226,8 +226,8 @@ if __name__ == "__main__":
         maxM = 100
         minibatch_size = 2000
         skip_connections = True
-        units = 64
-        latent_features = 5
+        units = 128
+        latent_features = 20
         learning_rate = 0.005
 
     ## 1M Configs
@@ -276,6 +276,10 @@ if __name__ == "__main__":
                {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.relu},
                {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.relu},
+               {'type':'matrix_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'activation':tf.nn.relu},
+               {'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)
@@ -295,10 +299,10 @@ if __name__ == "__main__":
                     'regularizer': tf.contrib.keras.regularizers.l2(.00001),
                 },
                 'matrix_pool_sparse':{
-                    'pool_mode':'max',
+                    'pool_mode':'mean',
                 },
                 'matrix_dropout_sparse':{
-                    'rate':.3,
+                    'rate':.2,
                 }
             },
            'lr':learning_rate,

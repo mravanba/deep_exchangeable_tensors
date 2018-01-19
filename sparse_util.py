@@ -232,6 +232,29 @@ def sparse_dropout(values, num_features, rate=0.0, training=True):
     return vals
 
 
+# Apply dropout to rows and columns independently with probability rate
+def sparse_dropout_row_col(values, mask_inds, shape, rate=0.0, training=True):
+    N,M,K = shape
+    vals = tf.reshape(values, [-1,K])
+    num_vals = tf.shape(vals)[0]
+    
+    row_mask = np.random.choice([0,1], size=N, p=(rate, 1-rate)) # Dropout rows where this mask is 0
+    row_keep = np.arange(N)[row_mask==1]
+    _, row_inds = tf.setdiff1d(mask_inds[:,0], row_keep)
+
+    col_mask = np.random.choice([0,1], size=M, p=(rate, 1-rate)) # Dropout cols where this mask is 0
+    col_keep = np.arange(M)[col_mask==1]
+    _, col_inds = tf.setdiff1d(mask_inds[:,1], col_keep)
+
+    inds, _ = tf.unique(tf.concat([row_inds, col_inds], axis=0))
+
+    drop_mask = tf.scatter_nd(tf.expand_dims(inds, axis=1), tf.ones_like(inds), shape=[num_vals])
+    drop_mask = tf.cast(drop_mask, tf.bool)
+
+    new_vals = tf.where(drop_mask, tf.zeros_like(vals), vals)
+    new_vals = tf.reshape(new_vals, [-1])
+
+    return new_vals
 
 
 
