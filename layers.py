@@ -203,10 +203,8 @@ def channel_dropout_sparse(inputs, layer_params, verbose=1, scope=None,
     units = inputs['units']
     shape = inputs['shape']
    
-    #out = tf.nn.dropout(tf.reshape(inp_values, [-1, units]), keep_prob)
     out = tf.layers.dropout(tf.reshape(inp_values, [-1, units]), rate = rate, training=is_training)
     out = tf.reshape(out, [-1])
-    print("using dropout with rate %f. Is train: %s" % (rate, is_training))
 
     return {'input':out, 'mask_indices':mask_indices, 'units':units, 'shape':shape}
 
@@ -228,17 +226,6 @@ def matrix_dropout(inputs,#dropout along both axes
     outdic = {'input':out, 'mask':mask, 'total_shape':inputs['total_shape']}   
     return outdic
 
-
-# def dense(
-#         inputs,
-#         verbose = 1,
-#         **layer_params):
-    
-#     inp = inputs['input']
-#     units = layer_params.get('units', 100)
-#     outp = tf.layers.dense(inp, units, **layer_params)
-#     output = {'input':outp}
-#     return output
 
 def weighted_mean_reduce(mask_indices, mat_values, K, shape, logweights=None, axis=None):
     eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
@@ -292,14 +279,16 @@ def matrix_sparse(
         output =  tf.convert_to_tensor(0, np.float32)
 
         if mat_values is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
-            if 'max' in layer_params.get('pool_mode', 'max') and mask_indices is None:
+            if 'max' in layer_params.get('pool_mode', 'max'):
                 mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=0, keep_dims=True) 
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=None, keep_dims=True)
-            else:
+            elif layer_params['pool_mode'] == 'mean':
                 mat_marg_0 = weighted_mean_reduce(mask_indices, mat_values, K, shape=shape, logweights=inputs.get('weights_row', None), axis=0) # 1 x M x K
                 mat_marg_1 = weighted_mean_reduce(mask_indices, mat_values, K, shape=shape, logweights=inputs.get('weights_col', None), axis=1) # N x 1 x K
                 mat_marg_2 = weighted_mean_reduce(mask_indices, mat_values, K, shape=shape, logweights=inputs.get('weights_both', None), axis=None) # 1 x 1 x K
+            else:
+                raise KeyError("Unrecognised pool mode: %s" % layer_params["pool_mode"])
 
             theta_0 = model_variable("theta_0", shape=[K,units], trainable=True, dtype=tf.float32)
             theta_1 = model_variable("theta_1", shape=[K,units], trainable=True, dtype=tf.float32)
@@ -395,10 +384,14 @@ def matrix_pool_sparse(inputs,#pool the tensor: input: N x M x K along two dimen
         theta_n = model_variable("theta_n", shape=[units_in,units_in], trainable=True, dtype=tf.float32)
         theta_m = model_variable("theta_m", shape=[units_in,units_in], trainable=True, dtype=tf.float32)
         
-        norm_0 = sparse_marginalize_mask(mask_indices, shape=shape, axis=0, keep_dims=True) + eps
-        norm_1 = sparse_marginalize_mask(mask_indices, shape=shape, axis=1, keep_dims=True) + eps
-        nvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=1, keep_dims=True) / norm_1
-        mvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=0, keep_dims=True) / norm_0
+        if pool_mode is 'mean':
+            norm_0 = sparse_marginalize_mask(mask_indices, shape=shape, axis=0, keep_dims=True) + eps
+            norm_1 = sparse_marginalize_mask(mask_indices, shape=shape, axis=1, keep_dims=True) + eps
+            nvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=1, keep_dims=True) / norm_1
+            mvec = sparse_reduce(mask_indices, inp_values, units_in, mode='sum', shape=shape, axis=0, keep_dims=True) / norm_0
+        else:
+            nvec = sparse_reduce(mask_indices, inp_values, units_in, mode=pool_mode, shape=shape, axis=1, keep_dims=True)
+            mvec = sparse_reduce(mask_indices, inp_values, units_in, mode=pool_mode, shape=shape, axis=0, keep_dims=True)
 
         nvec = tf.tensordot(nvec, theta_n, axes=1)
         nvec.set_shape([N,1,units_in])#because of current tensorflow bug!!
@@ -421,10 +414,11 @@ def matrix_dropout_sparse(inputs,
     inp_values = inputs['input']
     mask_indices = inputs.get('mask_indices', None)
     units = inputs['units']
-    shape = inputs['shape']
+    N,M = inputs['shape']
    
-    out = sparse_dropout(inp_values, units, rate=rate, training=is_training)
+    # out = sparse_dropout(inp_values, units, rate=rate, training=is_training)
+    out = sparse_dropout_row_col(inp_values, mask_indices, [N,M,units], rate=rate, training=is_training)
 
-    return {'input':out, 'mask_indices':mask_indices, 'units':units, 'shape':shape}
+    return {'input':out, 'mask_indices':mask_indices, 'units':units, 'shape':[N,M]}
 
 

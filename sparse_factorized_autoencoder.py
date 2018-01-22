@@ -319,6 +319,7 @@ if __name__ == "__main__":
     # path = 'netflix/6m'
 
     ap = True # use attention pooling
+    lossfn = "ce"
     ## 100k Configs
     if 'movielens-100k' in path:
         maxN = 100
@@ -353,7 +354,7 @@ if __name__ == "__main__":
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
-           'loss':"ce",
+           'loss':lossfn,
            'optimizer':"adam",
            'opt_options':{"epsilon":1e-8},
            # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
@@ -377,7 +378,7 @@ if __name__ == "__main__":
                {'type':'channel_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'channel_dropout_sparse'},
-               {'type':'matrix_sparse', 'units':5, 'activation':None},
+               {'type':'matrix_sparse', 'units':5 if lossfn == "ce" else 1, 'activation':None},
             ],
             'defaults':{#default values for each layer type (see layer.py)
                  'bilinear_sparse':{
@@ -394,7 +395,7 @@ if __name__ == "__main__":
                     # 'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
                     #'activation':tf.nn.relu,
-                    'activation':lambda x: tf.nn.relu(x) - 0.01*tf.nn.relu(-x),
+                    'activation':lambda x: tf.nn.relu(x) - 0.01*tf.nn.relu(-x), # Leaky Relu
                     # 'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
@@ -413,7 +414,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 },
                 'matrix_dropout_sparse':{
-                    'rate':.3,
+                    'rate':.2,
                 }
             },
            'lr':learning_rate,
