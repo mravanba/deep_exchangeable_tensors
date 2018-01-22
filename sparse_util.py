@@ -252,7 +252,7 @@ def sparse_dropout_row_col(values, mask_inds, shape, rate=0.0, training=True):
     drop_mask = tf.cast(drop_mask, tf.bool)
 
     new_vals = tf.where(drop_mask, tf.zeros_like(vals), vals)
-    new_vals = tf.reshape(new_vals, [-1])
+    new_vals = tf.reshape(new_vals, [-1]) / (1 - rate * rate)
 
     return new_vals
 
