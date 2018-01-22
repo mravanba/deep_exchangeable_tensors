@@ -195,6 +195,20 @@ def matrix_pool(inputs,#pool the tensor: input: N x M x K along two dimensions
         outdic = {'nvec':nvec, 'mvec':mvec, 'mask':mask, 'total_shape':inputs['total_shape']}
         return outdic    
 
+def channel_dropout_sparse(inputs, layer_params, verbose=1, scope=None,
+                           is_training=True, **kwargs):
+    rate = layer_params.get('rate', .5)
+    inp_values = inputs['input']
+    mask_indices = inputs.get('mask_indices', None)
+    units = inputs['units']
+    shape = inputs['shape']
+   
+    #out = tf.nn.dropout(tf.reshape(inp_values, [-1, units]), keep_prob)
+    out = tf.layers.dropout(tf.reshape(inp_values, [-1, units]), rate = rate, training=is_training)
+    out = tf.reshape(out, [-1])
+    print("using dropout with rate %f. Is train: %s" % (rate, is_training))
+
+    return {'input':out, 'mask_indices':mask_indices, 'units':units, 'shape':shape}
 
 def matrix_dropout(inputs,#dropout along both axes
                    layer_params,
@@ -226,6 +240,22 @@ def matrix_dropout(inputs,#dropout along both axes
 #     output = {'input':outp}
 #     return output
 
+def weighted_mean_reduce(mask_indices, mat_values, K, shape, logweights=None, axis=None):
+    eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
+    if logweights is None:
+        weights = tf.ones_like(mat_values)
+        weighted_values = mat_values
+    else:
+        weights = tf.exp((logweights - tf.reduce_max(logweights))) # prevent overflow
+        weights = tf.reshape(weights, shape=[-1,K])
+        if axis is not None:
+            weights = tf.gather(weights, mask_indices[:,axis])
+        weighted_values = weights * tf.reshape(mat_values, shape=[-1,K])
+        weighted_values = tf.reshape(weighted_values, [-1])
+        weights = tf.reshape(weights, [-1])
+
+    norm = sparse_reduce(mask_indices, weights, K, shape=shape, mode='sum', axis=axis, keep_dims=True) + eps # 1 x M x K
+    return sparse_reduce(mask_indices, weighted_values, K, shape=shape, mode='sum', axis=axis, keep_dims=True) / norm
             
 
 ##### Sparse Layers: #####
@@ -251,7 +281,6 @@ def matrix_sparse(
         #we should have the input matrix or at least one vector per dimension
         assert(('nvec' in inputs and 'mvec' in inputs) or 'input' in inputs)
 
-        eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
         mat_values = inputs.get('input', None)#N x M x K
         mask_indices = inputs.get('mask_indices', None)
         skip_connections = layer_params.get('skip_connections', False)
@@ -263,18 +292,14 @@ def matrix_sparse(
         output =  tf.convert_to_tensor(0, np.float32)
 
         if mat_values is not None:#if we have an input matrix. If not, we only have nvec and mvec, i.e., user and movie properties
-            norm_N = sparse_marginalize_mask(mask_indices, shape=shape, axis=0, keep_dims=True) + eps # 1, M, 1
-            norm_M = sparse_marginalize_mask(mask_indices, shape=shape, axis=1, keep_dims=True) + eps # N, 1, 1
-            norm_NM = sparse_marginalize_mask(mask_indices, shape=shape, axis=None, keep_dims=True) + eps # 1, 1, 1
-
             if 'max' in layer_params.get('pool_mode', 'max') and mask_indices is None:
                 mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=0, keep_dims=True) 
                 mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=1, keep_dims=True)
                 mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='max', axis=None, keep_dims=True)
             else:
-                mat_marg_0 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='sum', axis=0, keep_dims=True) / norm_N # 1 x M x K
-                mat_marg_1 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='sum', axis=1, keep_dims=True) / norm_M # N x 1 x K
-                mat_marg_2 = sparse_reduce(mask_indices, mat_values, K, shape=shape, mode='sum', axis=None, keep_dims=True) / norm_NM # 1 x 1 x K
+                mat_marg_0 = weighted_mean_reduce(mask_indices, mat_values, K, shape=shape, logweights=inputs.get('weights_row', None), axis=0) # 1 x M x K
+                mat_marg_1 = weighted_mean_reduce(mask_indices, mat_values, K, shape=shape, logweights=inputs.get('weights_col', None), axis=1) # N x 1 x K
+                mat_marg_2 = weighted_mean_reduce(mask_indices, mat_values, K, shape=shape, logweights=inputs.get('weights_both', None), axis=None) # 1 x 1 x K
 
             theta_0 = model_variable("theta_0", shape=[K,units], trainable=True, dtype=tf.float32)
             theta_1 = model_variable("theta_1", shape=[K,units], trainable=True, dtype=tf.float32)
@@ -335,6 +360,18 @@ def matrix_sparse(
             # output = dense_tensor_to_sparse_values(output, mask_indices, units)
 
         outdic = {'input':output, 'mask_indices':mask_indices, 'units':units, 'shape':shape}
+        if layer_params.get("attention_pooling", False):
+            gamma_0 = model_variable("gamma_0", shape=[K,units], trainable=True, dtype=tf.float32)
+            gamma_1 = model_variable("gamma_1", shape=[K,units], trainable=True, dtype=tf.float32)
+            gamma_2 = model_variable("gamma_2", shape=[K,units], trainable=True, dtype=tf.float32)
+            c = 1.
+            if mat_values is not None:
+                outdic["weights_row"] = tf.tensordot(mat_marg_1 * c, gamma_2, axes=[[2],[0]])
+                outdic["weights_col"] = tf.tensordot(mat_marg_0 * c, gamma_1, axes=[[2],[0]])
+                outdic["weights_both"] = sparse_tensordot_sparse(mat_values * c, gamma_0, K)
+            else:
+                outdic["weights_row"] = tf.tensordot(nvec * c, gamma_2, axes=[[2],[0]])
+                outdic["weights_col"] = tf.tensordot(mvec * c, gamma_1, axes=[[2],[0]])
         return outdic
 
 
