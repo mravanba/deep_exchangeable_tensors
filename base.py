@@ -41,10 +41,9 @@ class Model(object): #constructs a series of connected layers from layers.py fro
         for layer in self._layers:
             for key, val in self._layer_defaults[layer['type']].items():
                 if key not in layer:
-                    layer[key] = val
-
-                    
-    def get_output(self, inputs, reuse=None, verbose=None, is_training=True):
+                    layer[key] = val             
+    
+    def get_output(self, inputs, reuse=None, verbose=None, is_training=True, getter=None):
         self._inputs = inputs
         products = []
         if verbose is None:
@@ -54,7 +53,7 @@ class Model(object): #constructs a series of connected layers from layers.py fro
             helper.print_dims(prefix="input: ", **new_product)
         all_layers_returned = self.get_attr("all_layers_returned", False)
         scope = self.get_attr("_scope", "prediction")
-        with tf.variable_scope(scope, reuse=reuse):#construct the neural network from the self._layers list of layers
+        with tf.variable_scope(scope, reuse=reuse, custom_getter=getter):#construct the neural network from the self._layers list of layers
             for l, layer in enumerate(self._layers):
                 if hasattr(ly, layer['type']):#see if a method in the module layers.py with this layer type exists
                     with tf.variable_scope(str(l)) as l_scope:
