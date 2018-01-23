@@ -227,13 +227,13 @@ def matrix_dropout(inputs,#dropout along both axes
     return outdic
 
 
-def weighted_mean_reduce(mask_indices, mat_values, K, shape, logweights=None, axis=None):
+def weighted_mean_reduce(mask_indices, mat_values, K, shape, logweights=None, axis=None, weight_scale=10.):
     eps = tf.convert_to_tensor(1e-3, dtype=np.float32)
     if logweights is None:
         weights = tf.ones_like(mat_values)
         weighted_values = mat_values
     else:
-        weights = tf.exp((logweights - tf.reduce_max(logweights))) # prevent overflow
+        weights = tf.exp(weight_scale * (logweights - tf.reduce_max(logweights))) # prevent overflow
         weights = tf.reshape(weights, shape=[-1,K])
         if axis is not None:
             weights = tf.gather(weights, mask_indices[:,axis])

@@ -268,12 +268,16 @@ def main(opts, logfile=None):
         losses["train"] = []
         losses["valid"] = []
         losses["test"] = []
-        
+        min_ts_loss = 5 
+        min_val_ts = 5 
+       
         saver = tf.train.Saver()
+
+        best_log = opts.get("model_name", "TEST") + "_best.log"
+        print("epoch,train,valid,test\n", file=open(best_log, "a"))
         for ep in range(opts['epochs']):
             begin = time.time()
             loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0,0,0,0
-
 
             if 'by_row_column_density' in opts['sample_mode']:
                 for indn_, indm_ in tqdm(sample_submatrix(data['mask_tr'], maxN, maxM, sample_uniform=False), 
@@ -307,11 +311,9 @@ def main(opts, logfile=None):
                     returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
                     bloss_, brec_loss_ = [i for i in returns[1:3]] # ema_op may be empty and we only need these two outputs
 
-                    loss_tr_ += np.sqrt(bloss_)
+                    loss_tr_ += bloss_
                     rec_loss_tr_ += np.sqrt(brec_loss_)
                     gc.collect()
-
-
             else:
                 raise ValueError('\nERROR - unknown <sample_mode> in main()\n')
 
@@ -342,10 +344,15 @@ def main(opts, logfile=None):
             bloss_test, = sess.run([rec_loss_val], feed_dict=test_dict)
 
             loss_ts_ += np.sqrt(bloss_test)
+            if loss_ts_ < min_ts_loss: # keep track of the best validation loss 
+                min_ts_loss = loss_ts_
+                min_val_ts = loss_val_
             if loss_val_ < min_loss: # keep track of the best validation loss 
                 min_loss = loss_val_
                 min_loss_epoch = ep
-                min_train = loss_tr_
+                min_train = rec_loss_tr_
+                min_test = loss_ts_
+                print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
                 if ep > 1000:
                     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
                     print("Model saved in file: %s" % save_path, file=LOG)
@@ -357,10 +364,11 @@ def main(opts, logfile=None):
             losses['valid'].append(loss_val_)
             losses['test'].append(loss_ts_)
 
-            print("epoch {:d} took {:.1f} train loss {:.3f} (rec:{:.3f}) \t valid: {:.3f} \t min valid loss: {:.3f} \
-                   (train: {:.3}) at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, 
+            print("epoch {:d} took {:.1f} train loss {:.3f} (rec:{:.3f}); valid: {:.3f}; min valid loss: {:.3f} \
+(train: {:.3}, test: {:.3}) at epoch: {:d}; test loss: {:.3f} (best test: {:.3f} with val {:.3f})".format(ep, time.time() - begin, loss_tr_, 
                                                                               rec_loss_tr_, loss_val_, min_loss, 
-                                                                              min_train, min_loss_epoch, loss_ts_), file=LOG)
+                                                                              min_train, min_test, min_loss_epoch, loss_ts_,
+                                                                              min_ts_loss, min_val_ts), file=LOG)
             gc.collect()
     return losses
 
@@ -373,7 +381,7 @@ if __name__ == "__main__":
     #path = 'movielens-1M'
     # path = 'netflix/6m'
 
-    ap = True # use attention pooling
+    ap = False # use attention pooling
     lossfn = "ce"
     ## 100k Configs
     if 'movielens-100k' in path:
@@ -381,9 +389,9 @@ if __name__ == "__main__":
         maxM = 100
         minibatch_size = 5000000
         skip_connections = False 
-        units = 25
-        latent_features = 5
-        learning_rate = 0.005
+        units = 150
+        latent_features = 100
+        learning_rate = 0.0005
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -412,7 +420,7 @@ if __name__ == "__main__":
            'verbose':2,
            'loss':lossfn,
            'optimizer':"adam",
-           'opt_options':{"epsilon":1e-8},
+           'opt_options':{"epsilon":1e-6},
            # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            # 'maxM':1682,#num movies per submatrix
            'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
@@ -429,6 +437,7 @@ if __name__ == "__main__":
                {'type':'matrix_pool_sparse'},
                ],
             'decoder':[
+               {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'channel_dropout_sparse'},
