@@ -48,10 +48,11 @@ def get_test(beta, n_train, ratings_obs_obs, ratings_obs_hid, ratings_hid_obs, r
     return test_mask, test_values, remainders
 
 
-def train_test_valid(df, train=0.7, test=0.2, valid=0.1, rng=None):
-    test_mask, test_values, df = get_n(df, int(df.shape[0] * 0.2),rng=rng)
+def train_test_valid(df, train=0.8, test=0.2, valid=0., rng=None):
+    assert (train + test + valid) == 1.
+    test_mask, test_values, df = get_n(df, int(df.shape[0] * test),rng=rng)
     if valid > 0.:
-        valid_mask, valid_values, df = get_n(df, int(df.shape[0] * 0.1),rng=rng)
+        valid_mask, valid_values, df = get_n(df, int(df.shape[0] * valid),rng=rng)
     train_mask, train_values = (df[:,0:2], df[:,2])
     if valid > 0.:
         return (train_mask, train_values), (valid_mask, valid_values), (test_mask, test_values)
@@ -84,6 +85,7 @@ def load_ratings(seed=1234):
 
     n_ratings = ratings.rating.shape[0]
     n_users = np.max(ratings.user_id)
+    n_movies = np.max(ratings.movie_id)
     # get unique users / movies 
     movie_id = np.unique(ratings["movie_id"])
     user_id = np.unique(ratings["user_id"])
@@ -92,11 +94,11 @@ def load_ratings(seed=1234):
     ratings = ratings.loc[:, ["user_id", "movie_id", "rating"]]
 
     # split users into known (observed) and new (hidden) users
-    observed_users, hidden_users = random_split(user_id, rng=rng)
-    observed_movies, hidden_movies = random_split(movie_id, rng=rng)
+    observed_users, hidden_users = random_split(user_id, 0.3, rng=rng)
+    observed_movies, hidden_movies = random_split(movie_id, 0.3, rng=rng)
 
     # get a subset of users and movies simmilar in size to ml-100k for training
-    p = 0.65
+    p = 1.
     # split user vec into 2 with `p` in the first hald and `1-p` in the second half (randomly permuted)
     training_users,_ = random_split(observed_users, p, rng=rng)
     training_movies,_ = random_split(observed_movies, p, rng=rng)
@@ -109,11 +111,11 @@ def load_ratings(seed=1234):
     known_ratings.loc[:,"movie_id"] = movies
 
     # split into train / valid / test as usual
-    train, valid, test = train_test_valid(known_ratings, rng=rng)
+    train, valid, test = train_test_valid(known_ratings, train=0.75, valid=0.05, test=0.2, rng=rng)
     # build data dictionary 
-    known_dat = prep_data_dict(train, valid, test, users.max() + 1, movies.max() + 1)
+    known_dat = prep_data_dict(train, valid, test, n_users, n_movies) # users.max() + 1, movies.max() + 1)
 
-    p = 0.6
+    p = 0.5
     # get another subset of users and movies (distinct from previous users / movies) for evaluation.
     # the steps are the same except the users and movies are different
     new_users,_ = random_split(hidden_users, p, rng=rng)
@@ -124,8 +126,8 @@ def load_ratings(seed=1234):
     _, movies = np.unique(new_ratings.movie_id, return_inverse=True)
     new_ratings.loc[:,"movie_id"] = movies
 
-    new_obs, new_hidden = train_test_valid(new_ratings, train=0.8, valid=0., rng=rng)
-    new_dat = prep_data_dict(new_obs, test=new_hidden, n_users=users.max() + 1, n_movies=movies.max() + 1)
+    new_obs, new_hidden = train_test_valid(new_ratings, train=0.8, valid=0., test=0.2, rng=rng)
+    new_dat = prep_data_dict(new_obs, test=new_hidden, n_users=n_users, n_movies=n_movies)
     return known_dat, new_dat
 
 

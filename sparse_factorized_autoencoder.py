@@ -75,8 +75,8 @@ def neighbourhood_sampling(mask, n=1, batch_size=None, replace=False, unique_see
 
 def rec_loss_fn_sp(mat_values, mask_indices, rec_values, mask_split=None):
     if mask_split is None:
-        mask_split = 1.
-    return tf.reduce_sum((mat_values - rec_values)**2 * mask_split) / tf.cast(tf.shape(mask_indices)[0], tf.float32)
+        mask_split = tf.ones_like(mat_values)
+    return tf.reduce_sum((mat_values - rec_values)**2 * mask_split) / tf.cast(tf.reduce_sum(mask_split), tf.float32)
 
 def get_losses(lossfn, reg_loss, mat_values_tr, mat_values_val, mask_indices_tr, mask_indices_val, out_tr, out_val, mask_split):
     if lossfn == "mse":
@@ -161,14 +161,14 @@ def setup_ema(scope, decay=0.998):
         getter = None
         return ema_op, getter
 
-def main(opts, logfile=None):        
+def main(opts, logfile=None, restore_point=None):        
     if logfile is not None:
         LOG = open(logfile, "w", 0)
     else:
         LOG = sys.stdout
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)    
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.1, test=.1, mode='sparse', fold=1)
+    data = get_data(path, train=.75, valid=.05, test=.2, mode='sparse', fold=1) # ml-100k uses official test set so only the valid paramter matters
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_shape']
@@ -272,8 +272,10 @@ def main(opts, logfile=None):
         min_val_ts = 5 
        
         saver = tf.train.Saver()
+        if restore_point is not None:
+            saver.restore(sess, restore_point)
 
-        best_log = opts.get("model_name", "TEST") + "_best.log"
+        best_log = "logs/" + opts.get("model_name", "TEST") + "_best.log"
         print("epoch,train,valid,test\n", file=open(best_log, "a"))
         for ep in range(opts['epochs']):
             begin = time.time()
@@ -353,7 +355,7 @@ def main(opts, logfile=None):
                 min_train = rec_loss_tr_
                 min_test = loss_ts_
                 print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
-                if ep > 1000:
+                if ep > 1000 and (min_loss < 0.93): # save the best paramters after they get sufficiently good. TODO: a better way of doing this
                     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
                     print("Model saved in file: %s" % save_path, file=LOG)
             if (ep+1) % 500 == 0:
@@ -370,10 +372,15 @@ def main(opts, logfile=None):
                                                                               min_train, min_test, min_loss_epoch, loss_ts_,
                                                                               min_ts_loss, min_val_ts), file=LOG)
             gc.collect()
+            if loss_val_ > min_loss * 1.075:
+                # overfitting: break if validation loss diverges
+                break
     return losses
 
 if __name__ == "__main__":
 
+    #restore_point = "checkpoints/factorized_ae/test_fac_ae_checkpt_ep_05500.ckpt"
+    restore_point = None
     if len(sys.argv) > 1:
         LOG = open(sys.argv[1], "w", 0)
     # path = 'movielens-TEST'
@@ -381,7 +388,7 @@ if __name__ == "__main__":
     #path = 'movielens-1M'
     # path = 'netflix/6m'
 
-    ap = False # use attention pooling
+    ap = False# use attention pooling
     lossfn = "ce"
     ## 100k Configs
     if 'movielens-100k' in path:
@@ -389,7 +396,7 @@ if __name__ == "__main__":
         maxM = 100
         minibatch_size = 5000000
         skip_connections = False 
-        units = 150
+        units = 220
         latent_features = 100
         learning_rate = 0.0005
 
@@ -415,8 +422,8 @@ if __name__ == "__main__":
 
     opts ={'epochs': 100000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
-           'model_name':'test_fac_ae',
-           'ema_decay':0.998,
+           'model_name':'noatt_fac_ae',
+           'ema_decay':0.9,
            'verbose':2,
            'loss':lossfn,
            'optimizer':"adam",
@@ -433,6 +440,7 @@ if __name__ == "__main__":
            'encoder':[
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
+               #{'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
@@ -479,7 +487,7 @@ if __name__ == "__main__":
                     'rate':.5,
                 },
                 'matrix_dropout_sparse':{
-                    'rate':.2,
+                    'rate':.05,
                 }
             },
            'lr':learning_rate,
@@ -487,6 +495,6 @@ if __name__ == "__main__":
            
     }
     
-    main(opts)
+    main(opts, restore_point=restore_point)
 
 

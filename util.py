@@ -96,7 +96,7 @@ def get_ml100k(valid=0.1, rng=None, dense=False, fold=1):
     return data
 
 def get_data(dataset='movielens-small',
-                 mode='dense',#returned matrix: dense, sparse, table
+                 mode='sparse',#returned matrix: dense, sparse, table
                  train=.8,
                  test=.1,
                  valid=.1,
@@ -201,7 +201,7 @@ def get_data(dataset='movielens-small',
         return data
 
     elif 'movielens-100k' in dataset:
-        return get_ml100k(valid, rng, mode=="dense", kwargs["fold"])
+        return get_ml100k(valid, rng, mode=="dense", kwargs.get("fold", 1))
 
     elif 'movielens-1M' in dataset:
         r_cols = ['user_id', None, 'movie_id', None, 'rating', None, 'unix_timestamp']
@@ -242,23 +242,7 @@ def get_data(dataset='movielens-small',
         n_users_tr_val = np.max(mask_indices_tr_val[:,0]) + 1
         n_movies_tr_val = np.max(mask_indices_tr_val[:,1]) + 1
 
-        mat_tr_val = sparse_array_to_dense(mat_values_tr_val, mask_indices_tr_val, [n_users_tr_val, n_movies_tr_val, 1])
-        
-        mask_tr_val = np.zeros([n_users, n_movies])
-        mask_tr_val[mask_indices_tr_val] = 1
-        
-        mask_tr = np.zeros([n_users, n_movies])
-        mask_tr[mask_indices_tr] = 1
-        
-        mask_val = np.zeros([n_users, n_movies])
-        mask_val[mask_indices_val] = 1
-
-        data = {'mat_tr_val':mat_tr_val,
-                'mask_tr_val':mask_tr_val,
-                'mask_tr':mask_tr,
-                'mask_val':mask_val,
-
-                'mat_values_tr_val':mat_values_tr_val,
+        data = {'mat_values_tr_val':mat_values_tr_val,
                 'mask_indices_tr_val':mask_indices_tr_val,
                 'mat_values_tr':mat_values_tr,
                 'mask_indices_tr':mask_indices_tr,
@@ -267,7 +251,22 @@ def get_data(dataset='movielens-small',
                 'mat_shape':[n_users, n_movies, 1], 
                 'mask_tr_val_split':split_tr_val}
 
-        # pdb.set_trace()
+        if mode=='dense':
+            mat_tr_val = sparse_array_to_dense(mat_values_tr_val, mask_indices_tr_val, [n_users_tr_val, n_movies_tr_val, 1])
+        
+            mask_tr_val = np.zeros([n_users, n_movies])
+            mask_tr_val[mask_indices_tr_val] = 1
+        
+            mask_tr = np.zeros([n_users, n_movies])
+            mask_tr[mask_indices_tr] = 1
+       
+            mask_val = np.zeros([n_users, n_movies])
+            mask_val[mask_indices_val] = 1
+            data.update({'mat_tr_val':mat_tr_val,
+                'mask_tr_val':mask_tr_val,
+                'mask_tr':mask_tr,
+                'mask_val':mask_val}
+
         return data
 
     elif 'netflix' in dataset:
