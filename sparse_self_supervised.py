@@ -95,9 +95,9 @@ def ordinal_hinge_loss_fn_sp(mat_values, rec_values, noise_mask, alpha, num_valu
     return alpha * tf.reduce_sum(out_c) + (1-alpha) * tf.reduce_sum(out_u) 
 
 def main(opts):        
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9) 
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8) 
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.1, test=.1)
+    data = get_data(path, train=.8, valid=.1, test=.1, fold=1)
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_shape']
@@ -154,7 +154,7 @@ def main(opts):
 
             #loss and training
             rec_loss = dae_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'])
-            # rec_loss = ordinal_hinge_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'], minibatch_size)
+            #rec_loss = ordinal_hinge_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'], minibatch_size)
             reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)) # regularization            
             total_loss = rec_loss + reg_loss
 
@@ -179,8 +179,7 @@ def main(opts):
             for ep in range(opts['epochs']):
                 begin = time.time()
                 loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0,0,0,0                 
-                for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch), 
-                                    total=iters_per_epoch):
+                for sample_ in sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch):
 
                     mat_values = one_hot(data['mat_values_tr'][sample_])
                     mask_indices = data['mask_indices_tr'][sample_]
@@ -204,7 +203,7 @@ def main(opts):
                 losses['train'].append(loss_tr_)
 
                 ## Validation Loss
-                for sample_ in tqdm(sample_dense_values_uniform(data['mask_indices_tr_val'], minibatch_size, iters_per_epoch), total=iters_per_epoch):
+                for sample_ in sample_dense_values_uniform(data['mask_indices_tr_val'], minibatch_size, iters_per_epoch):
                     mat_values = one_hot(data['mat_values_tr_val'][sample_]).reshape((-1, 5))
                     mask_indices = data['mask_indices_tr_val'][sample_]
 
@@ -244,11 +243,11 @@ if __name__ == "__main__":
         maxN = 10000
         maxM = 10000
         minibatch_size = 2000000
-        skip_connections = True
+        skip_connections = False
         units = 128
-        learning_rate = 0.001
-        dae_noise_rate = .1 # drop out this proportion of input values 
-        dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
+        learning_rate = 0.005
+        dae_noise_rate = .9 # drop out this proportion of input values 
+        dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
 
 
@@ -287,7 +286,7 @@ if __name__ == "__main__":
         l2_regularization = .00001
 
 
-    opts ={'epochs': 1000,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 10000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'test_fac_ae',
            'verbose':2,
@@ -304,15 +303,19 @@ if __name__ == "__main__":
                {'type':'matrix_sparse', 'units':units},
                {'type':'channel_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               {'type':'channel_dropout_sparse'},
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                {'type':'channel_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               {'type':'channel_dropout_sparse'},
+               {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                {'type':'matrix_sparse', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                ],
             'defaults':{#default values for each layer type (see layer.py)
                 'matrix_sparse':{
                     # 'activation':tf.nn.tanh,
                     # 'activation':tf.nn.sigmoid,
-                    'activation':tf.nn.relu,
+                    'activation':tf.nn.tanh,
                     # 'drop_mask':False,#whether to go over the whole matrix, or emulate the sparse matrix in layers beyond the input. If the mask is droped the whole matrix is used.
                     'pool_mode':'mean',#mean vs max in the exchangeable layer. Currently, when the mask is present, only mean is supported
                     'kernel_initializer': tf.random_normal_initializer(0, .01),
@@ -329,7 +332,11 @@ if __name__ == "__main__":
                 },
                 'channel_dropout_sparse':{
                     'rate':.5,
-                }
+                },
+                'matrix_pool_sparse':{
+                    'pool_mode':'max',
+                },
+                
             },
            'lr':learning_rate,
            'sample_mode':'uniform_over_dense_values', # by_row_column_density, uniform_over_dense_values
