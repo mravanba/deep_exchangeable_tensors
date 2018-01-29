@@ -265,7 +265,7 @@ def get_data(dataset='movielens-small',
             data.update({'mat_tr_val':mat_tr_val,
                 'mask_tr_val':mask_tr_val,
                 'mask_tr':mask_tr,
-                'mask_val':mask_val}
+                'mask_val':mask_val})
 
         return data
 
