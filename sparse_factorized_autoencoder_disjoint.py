@@ -194,7 +194,6 @@ def main(opts, logfile=None, restore_point=None):
     with tf.Graph().as_default():
         mat_values_tr = tf.placeholder(tf.float32, shape=[None], name='mat_values_tr')
         mask_indices_tr = tf.placeholder(tf.int32, shape=[None, 2], name='mask_indices_tr')
-        mat_shape = tf.placeholder(tf.int32, shape=[2], name='mat_shape')
 
         mat_values_val = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
         mask_split = tf.placeholder(tf.float32, shape=[None], name='mat_values_val')
@@ -204,14 +203,14 @@ def main(opts, logfile=None, restore_point=None):
         tr_dict = {'input':mat_values_tr,
                     'mask_indices':mask_indices_tr,
                     'units':1 if lossfn == "mse" else 5, 
-                    'shape':mat_shape,
+                    'shape':[N,M],
                     }
 
         
         val_dict = {'input':mat_values_tr,
                     'mask_indices':mask_indices_tr,
                     'units':1 if lossfn == "mse" else 5,
-                    'shape':mat_shape,
+                    'shape':[N,M],
                     }
 
         encoder = Model(layers=opts['encoder'], layer_defaults=opts['defaults'], scope="encoder", verbose=2) #define the encoder
@@ -294,7 +293,6 @@ def main(opts, logfile=None, restore_point=None):
 
                     tr_dict = {mat_values_tr:mat_values if lossfn == "mse" else one_hot(mat_values),
                                 mask_indices_tr:mask_indices,
-                                mat_shape:np.array([N,M], dtype="int")
                                 }
                     
                     returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
@@ -311,7 +309,6 @@ def main(opts, logfile=None, restore_point=None):
 
                     tr_dict = {mat_values_tr:mat_values if lossfn == "mse" else one_hot(mat_values),
                                 mask_indices_tr:mask_indices,
-                                mat_shape:np.array([N,M], dtype="int")
                                 }
                     
                     returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
@@ -332,8 +329,7 @@ def main(opts, logfile=None, restore_point=None):
                         mat_values_val:data['mat_values_tr_val'] if lossfn =="mse" else one_hot(data['mat_values_tr_val']),
                         mask_indices_val:data['mask_indices_val'],
                         mask_indices_tr_val:data['mask_indices_tr_val'],
-                        mask_split:(data['mask_tr_val_split'] == 1) * 1.,
-                        mat_shape:np.array([N,M], dtype="int")
+                        mask_split:(data['mask_tr_val_split'] == 1) * 1.
                         }
 
             bloss_val, = sess.run([rec_loss_val], feed_dict=val_dict)
@@ -345,8 +341,7 @@ def main(opts, logfile=None, restore_point=None):
                          mat_values_val:eval_data['mat_values_tr_val'] if lossfn =="mse" else one_hot(eval_data['mat_values_tr_val']),
                          mask_indices_val:eval_data['mask_indices_test'],
                          mask_indices_tr_val:eval_data['mask_indices_tr_val'],
-                         mask_split:(eval_data['mask_tr_val_split'] == 2) * 1.,
-                         mat_shape:np.array([N,M], dtype="int")
+                         mask_split:(eval_data['mask_tr_val_split'] == 2) * 1.
                         }
 
             bloss_test, = sess.run([rec_loss_val], feed_dict=test_dict)
