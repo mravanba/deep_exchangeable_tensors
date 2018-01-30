@@ -1,16 +1,17 @@
 from __future__ import print_function
+import numpy as np
 import h5py
 from sparse_factorized_autoencoder_disjoint import main as train_model_with_opts
-from sparse_factorized_autoencoder_disjoint import set_opts
+from sparse_factorized_autoencoder_disjoint import set_opts, one_hot
 
 def eval_dataset(fns, data, v=2):
     sess = fns["sess"]
-    val_dict = {fns["mat_values_tr"]:sparse_factorized_autoencoder_disjoint.one_hot(data["mat_values_tr"]),
+    val_dict = {fns["mat_values_tr"]:one_hot(data["mat_values_tr"]),
                 fns["mask_indices_tr"]:data["mask_indices_tr"],
-                fns["mat_values_val"]:sparse_factorized_autoencoder_disjoint.one_hot(data["mat_values_val"]),
-                fns["mask_indices_val"]:data["mask_indices_val"],
+                fns["mat_values_val"]:one_hot(data["mat_values_tr_val"]),
+                fns["mask_indices_val"]:data["mask_indices_test"],
                 fns["mask_indices_tr_val"]:data["mask_indices_tr_val"],
-                fns["mask_split"]:(data["mask_split"] == v) * 1.
+                fns["mask_split"]:(data["mask_tr_val_split"] == v) * 1.
                 }
     return np.sqrt(sess.run([fns["rec_loss_val"]], val_dict)[0])
 
@@ -80,17 +81,21 @@ def yahoo():
         custom eval function to map the 1-5 scale to 1-100 for yahoo.
         '''
         sess = fns["sess"]
-        val_dict = {fns["mat_values_tr"]:sparse_factorized_autoencoder_disjoint.one_hot(data["mat_values_tr"]),
+        val_dict = {fns["mat_values_tr"]:one_hot(data["mat_values_tr"]),
                     fns["mask_indices_tr"]:data["mask_indices_tr"],
-                    fns["mat_values_val"]:sparse_factorized_autoencoder_disjoint.one_hot(data["mat_values_val"]),
-                    fns["mask_indices_val"]:data["mask_indices_val"],
+                    fns["mat_values_val"]:one_hot(data["mat_values_tr_val"]),
+                    fns["mask_indices_val"]:data["mask_indices_test"],
                     fns["mask_indices_tr_val"]:data["mask_indices_tr_val"],
-                    fns["mask_split"]:(data["mask_split"] == v) * 1.
+                    fns["mask_split"]:(data["mask_tr_val_split"] == v) * 1.
                     }
         out = sess.run([fns["out_val"]], val_dict)[0]
         expval = (((softmax(out.reshape(-1,5))) * np.arange(1,6)[None, :]).sum(axis=1) - 0.5) * 25
         return np.sqrt(np.square(Otest[np.where(M)] *(expval- M[np.where(M)])).sum() / (Otest[np.where(M)]).sum())
     return yahoo, eval_yahoo
+
+def softmax(x):
+    e = np.exp(x - np.max(x))
+    return e / e.sum(axis=1)[:,None]
 
 def flixter():
     path_dataset = "./data/flixster/training_test_dataset.mat" 
@@ -100,7 +105,7 @@ def flixter():
     num_users = M.shape[0]
     num_items = M.shape[1]
     users, items = np.where(M)
-    ratings = np.round(M[np.where(M)]/25.) + 1
+    ratings = np.round(M[np.where(M)])
 
     flixter = {}
     flixter["mask_indices_tr_val"] = np.array([users, items], dtype="int").T
@@ -115,12 +120,12 @@ def flixter():
         custom eval function to map the 1-5 scale to 1-100 for flixter.
         '''
         sess = fns["sess"]
-        val_dict = {fns["mat_values_tr"]:sparse_factorized_autoencoder_disjoint.one_hot(data["mat_values_tr"]),
+        val_dict = {fns["mat_values_tr"]:one_hot(data["mat_values_tr"]),
                     fns["mask_indices_tr"]:data["mask_indices_tr"],
-                    fns["mat_values_val"]:sparse_factorized_autoencoder_disjoint.one_hot(data["mat_values_val"]),
-                    fns["mask_indices_val"]:data["mask_indices_val"],
+                    fns["mat_values_val"]:one_hot(data["mat_values_tr_val"]),
+                    fns["mask_indices_val"]:data["mask_indices_test"],
                     fns["mask_indices_tr_val"]:data["mask_indices_tr_val"],
-                    fns["mask_split"]:(data["mask_split"] == v) * 1.
+                    fns["mask_split"]:(data["mask_tr_val_split"] == v) * 1.
                     }
         out = sess.run([fns["out_val"]], val_dict)[0]
         expval = (((softmax(out.reshape(-1,5))) * np.arange(1,6)[None, :]).sum(axis=1))
@@ -188,15 +193,16 @@ def netflix():
     #                  names=["user_id", "movie_id", "rating"], encoding='latin-1')
     #known_dat, new_dat, new_ratings = split_dataset_with_ratings(ratings_df, p_known=0., 
     #                                    p_new=0.07, max_id_m=10000, max_id_u=17770)
-    return {}, lambda x: 0.
+    return {}, lambda x, y: 0.
 
 def main():
     print("Training")
-    losses, fns = train_model_with_opts(set_opts(epochs=700))
+    losses, fns = train_model_with_opts(set_opts(epochs=0))
     print("Training complete....")
     with open("results/tranfer_learning_results.log", "w") as save_file:
         print("model,rmse", file=save_file)
     for name, dataset in {"douban":douban, "flixter":flixter, "yahoo":yahoo, "netflix":netflix}.iteritems():
+        print(name)
         data, eval_fn = dataset()
         rmse = eval_fn(fns, data)
         print(name, rmse)

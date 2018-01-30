@@ -356,7 +356,7 @@ def main(opts, logfile=None, restore_point=None):
                 min_train = rec_loss_tr_
                 min_test = loss_ts_
                 print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
-                if ep > 1000 and (min_loss < 0.931):
+                if ep > 1000 and (min_loss < 0.942):
                     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
                     print("Model saved in file: %s" % save_path, file=LOG)
             if (ep+1) % 500 == 0:
@@ -378,15 +378,15 @@ def main(opts, logfile=None, restore_point=None):
                 break
     
     saver.restore(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
-    return losses, {"sess":sess,"mat_values_tr":mat_values_tr, mask_indices_tr:"mask_indices_tr",
+    return losses, {"sess":sess,"mat_values_tr":mat_values_tr, "mask_indices_tr":mask_indices_tr,
                      "mat_values_val":mat_values_val,"mask_indices_val":mask_indices_val,
                      "mask_indices_tr_val":mask_indices_tr_val,"mask_split":mask_split,
                      "total_loss":total_loss, "rec_loss":rec_loss,"rec_loss_val":rec_loss_val,
                      "out_tr":out_tr,"out_val":out_val}
 
 def set_opts(epochs=100000, learning_rate=0.0005, units=220, latent_features=100, path="movielens-100k", 
-             attention_pooling=False, lossfn="ce", maxN=100, maxN=100, skip_connections=False, model_name="disjoint_fac_ae",
-             ema_decay=0.9):
+             attention_pooling=False, lossfn="ce", maxN=100, maxM=100, skip_connections=False, model_name="disjoint_fac_ae",
+             ema_decay=0.9, minibatch_size=1000000):
     return {'epochs': epochs,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/%s' % model_name,
            'model_name':model_name,
@@ -504,8 +504,8 @@ if __name__ == "__main__":
         learning_rate = 0.005
 
 
-    opts = set_opts(learning_rate=learning_rate, units=units, latent_features=latent_features, path=path, 
-             attention_pooling=ap, lossfn=lossfn, maxN=maxN, maxN=maxM, skip_connections=skip_connections)
+    opts = set_opts(epochs=3000, learning_rate=learning_rate, units=units, latent_features=latent_features, path=path, 
+             attention_pooling=ap, lossfn=lossfn, maxN=maxN, maxM=maxM, skip_connections=skip_connections)
     
     main(opts, restore_point=restore_point)
 
