@@ -493,9 +493,8 @@ def main(opts, logfile=None, restore_point=None):
     return losses
 
 if __name__ == "__main__":
+    auto_restore = False
 
-    #restore_point = "checkpoints/factorized_ae/test_fac_ae_checkpt_ep_05500.ckpt"
-    restore_point = None
     if len(sys.argv) > 1:
         LOG = open(sys.argv[1], "w", 0)
     # path = 'movielens-TEST'
@@ -622,7 +621,11 @@ if __name__ == "__main__":
            'sample_mode':'conditional_sample_sparse' # by_row_column_density, uniform_over_dense_values, conditional_sample_sparse
            
     }
-    
+    if auto_restore:
+        restore_point = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt" % (opts.get('model_name', "test"))))[-1]
+        print("Restoring from %s" % restore_point)
+    else:
+        restore_point = None
     main(opts, restore_point=restore_point)
 
 
