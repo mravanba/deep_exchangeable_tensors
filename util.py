@@ -220,6 +220,8 @@ def get_data(dataset='movielens-small',
         _, movies = np.unique(ratings.movie_id, return_inverse=True)
         n_movies = np.max(movies) + 1
 
+
+
         split = np.random.choice([0,1], size=n_ratings, p=(train + valid, test))
 
         ratings_tr_val = ratings[split==0]
@@ -234,6 +236,8 @@ def get_data(dataset='movielens-small',
         ratings_val = ratings_tr_val[split_tr_val==1]
 
         split_tr_val = np.concatenate((split_tr_val, 2 * np.ones(ratings_ts.shape[0], np.int32)))
+
+
 
         mat_values_all = np.array(ratings.rating)
         mat_values_tr_val = np.array(ratings_tr_val.rating)
@@ -296,7 +300,8 @@ def get_data(dataset='movielens-small',
 
         print("     reading csv...")
 
-        ratings = pd.read_csv(path, sep='\t', names=r_cols, encoding='latin-1')
+        ratings = pd.read_csv(path, sep='\t', names=r_cols, encoding='latin-1')        
+        ratings.rating = ratings.rating.astype(int)
 
         n_ratings = ratings.rating.shape[0]
         n_users = np.max(ratings.user_id)
