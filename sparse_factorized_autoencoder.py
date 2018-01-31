@@ -382,7 +382,7 @@ def main(opts, logfile=None, restore_point=None):
                 raise ValueError('\nERROR - unknown <sample_mode> in main()\n')
 
             loss_tr_ /= iters_per_epoch
-            rec_loss_tr_ /= iters_per_epoch            
+            rec_loss_tr_ /= iters_per_epoch
 
             print("Training: epoch {:d} took {:.1f} train loss {:.3f} (rec:{:.3f});".format(ep+1, time.time() - begin, loss_tr_, rec_loss_tr_))
 
@@ -422,7 +422,7 @@ def main(opts, logfile=None, restore_point=None):
                         entries_val_count[sample_val_] = 1 # init zeros()
 
                 loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
-               
+
                 gc.collect()
                 ## Test Loss
                 print("Testing: ")
@@ -487,9 +487,9 @@ def main(opts, logfile=None, restore_point=None):
                                             min_train, min_test, min_loss_epoch, loss_ts_,
                                             min_ts_loss, min_val_ts), file=LOG)
                 gc.collect()
-            # if loss_val_ > min_loss * 1.075:
-            #     # overfitting: break if validation loss diverges
-            #     break
+            if loss_val_ > min_loss * 1.075:
+                # overfitting: break if validation loss diverges
+                break
     return losses
 
 if __name__ == "__main__":
@@ -498,8 +498,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         LOG = open(sys.argv[1], "w", 0)
     # path = 'movielens-TEST'
-    path = 'movielens-100k'
-    # path = 'movielens-1M'
+    # path = 'movielens-100k'
+    path = 'movielens-1M'
     # path = 'netflix/6m'
     # path = 'netflix/full'
 
@@ -534,7 +534,7 @@ if __name__ == "__main__":
         units = 110
         latent_features = 50
         learning_rate = 0.0005
-        validate_freq = 1 # perform validation every validate_freq epochs
+        validate_freq = 10 # perform validation every validate_freq epochs
 
     if 'netflix/full' in path:
         maxN = 1100 
@@ -543,7 +543,7 @@ if __name__ == "__main__":
         units = 110
         latent_features = 50
         learning_rate = 0.0005
-        validate_freq = 1 # perform validation every validate_freq epochs
+        validate_freq = 10 # perform validation every validate_freq epochs
 
 
     opts ={'epochs': 100000,#never-mind this. We have to implement look-ahead to report the best result.
