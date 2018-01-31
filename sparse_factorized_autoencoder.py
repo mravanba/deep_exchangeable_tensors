@@ -383,10 +383,11 @@ def main(opts, logfile=None, restore_point=None):
 
             loss_tr_ /= iters_per_epoch
             rec_loss_tr_ /= iters_per_epoch
+            losses['train'].append(loss_tr_)
 
             print("Training: epoch {:d} took {:.1f} train loss {:.3f} (rec:{:.3f});".format(ep+1, time.time() - begin, loss_tr_, rec_loss_tr_))
 
-            if (ep+1) % opts['validate_freq'] == 0: # Validate and test every validate_freq epochs
+            if (ep+1) % opts['validate_interval'] == 0: # Validate and test every validate_interval epochs
                 
                 ## Validation Loss     
                 print("Validating: ")
@@ -422,6 +423,7 @@ def main(opts, logfile=None, restore_point=None):
                         entries_val_count[sample_val_] = 1 # init zeros()
 
                 loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
+                losses['valid'].append(loss_val_)
 
                 gc.collect()
                 ## Test Loss
@@ -458,6 +460,7 @@ def main(opts, logfile=None, restore_point=None):
                         entries_ts_count[sample_ts_] = 1 # init zeros()
 
                 loss_ts_ = np.sqrt(np.sum(entries_ts) / np.sum(entries_ts_count))
+                losses['test'].append(loss_ts_)
  
                 if loss_val_ < min_loss: # keep track of the best validation loss 
                     min_loss = loss_val_
@@ -471,15 +474,7 @@ def main(opts, logfile=None, restore_point=None):
                 
                 if loss_ts_ < min_ts_loss: # keep track of the best test loss 
                     min_ts_loss = loss_ts_
-                    min_val_ts = loss_val_
-
-                if opts.get("checkpoint_interval", 10000000) % (ep+1) == 0:
-                    save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
-                    print("Model saved in file: %s" % save_path, file=LOG)
-
-                losses['train'].append(loss_tr_)
-                losses['valid'].append(loss_val_)
-                losses['test'].append(loss_ts_)
+                    min_val_ts = loss_val_                
 
                 print("Validation: epoch {:d} took {:.1f} train loss {:.3f} (rec:{:.3f}); valid: {:.3f}; min valid loss: {:.3f} (train: {:.3}, test: {:.3}) at epoch: {:d}; test loss: {:.3f} (best test: {:.3f} with val {:.3f})"
                                     .format(ep+1, time.time() - begin, loss_tr_, 
@@ -487,6 +482,11 @@ def main(opts, logfile=None, restore_point=None):
                                             min_train, min_test, min_loss_epoch, loss_ts_,
                                             min_ts_loss, min_val_ts), file=LOG)
                 gc.collect()
+
+            if opts.get("checkpoint_interval", 10000000) % (ep+1) == 0:
+                save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
+                print("Model saved in file: %s" % save_path, file=LOG)                                
+
             if loss_val_ > min_loss * 1.075:
                 # overfitting: break if validation loss diverges
                 break
@@ -515,7 +515,8 @@ if __name__ == "__main__":
         units = 220
         latent_features = 100
         learning_rate = 0.0005
-        validate_freq = 10 # perform validation every validate_freq epochs 
+        validate_interval = 10 # perform validation every validate_interval epochs 
+        checkpoint_interval = 10 
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -525,7 +526,8 @@ if __name__ == "__main__":
         units = 220
         latent_features = 100
         learning_rate = 0.0005
-        validate_freq = 10 # perform validation every validate_freq epochs
+        validate_interval = 10 # perform validation every validate_interval epochs
+        checkpoint_interval = 1
 
     if 'netflix/6m' in path:
         maxN = 1100
@@ -534,7 +536,8 @@ if __name__ == "__main__":
         units = 110
         latent_features = 50
         learning_rate = 0.0005
-        validate_freq = 10 # perform validation every validate_freq epochs
+        validate_interval = 10 # perform validation every validate_interval epochs
+        checkpoint_interval = 1 
 
     if 'netflix/full' in path:
         maxN = 1100 
@@ -543,7 +546,8 @@ if __name__ == "__main__":
         units = 110
         latent_features = 50
         learning_rate = 0.0005
-        validate_freq = 10 # perform validation every validate_freq epochs
+        validate_interval = 10 # perform validation every validate_interval epochs
+        checkpoint_interval = 1 
 
 
     opts ={'epochs': 100000,#never-mind this. We have to implement look-ahead to report the best result.
@@ -563,7 +567,9 @@ if __name__ == "__main__":
            'save':True,
            'data_path':path,
            'output_file':'output',
-           'validate_freq':validate_freq,
+           'validate_interval':validate_interval,
+           'checkpoint_interval':checkpoint_interval,
+           'save_best':True,
            'encoder':[
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
