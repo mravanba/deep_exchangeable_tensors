@@ -32,52 +32,56 @@ def get_ml100k(valid=0.1, rng=None, dense=False, fold=1):
         rng = np.random.RandomState()
     r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
     path_tr = os.path.join(data_folder,'ml-100k/u%d.base' % fold)
-    path_val = os.path.join(data_folder,'ml-100k/u%d.test' % fold)
+    path_test = os.path.join(data_folder,'ml-100k/u%d.test' % fold)
 
-    ratings_tr = pd.read_csv(path_tr, sep='\t', names=r_cols, encoding='latin-1')
-    ratings_test = pd.read_csv(path_val, sep='\t', names=r_cols, encoding='latin-1')
+    ratings_tr_val = pd.read_csv(path_tr, sep='\t', names=r_cols, encoding='latin-1')
+    ratings_test = pd.read_csv(path_test, sep='\t', names=r_cols, encoding='latin-1')
 
-    n = ratings_tr.shape[0]
+    n = ratings_tr_val.shape[0]
     tr_val_split = np.concatenate((np.zeros(int(n * (1-valid)), np.int32), np.ones(int(n*valid), np.int32)))
     tr_val_split = rng.permutation(tr_val_split)
-    ratings_tr_val = pd.concat([ratings_tr, ratings_test], ignore_index=True)
+    ratings_all = pd.concat([ratings_tr_val, ratings_test], ignore_index=True)
     tr_val_test_split = np.concatenate((tr_val_split, 2 * np.ones(ratings_test.shape[0], np.int32)))
 
-    ratings_tr_val['tr_val_split'] = tr_val_test_split
-    ratings_tr_val = ratings_tr_val.sort_values(by=['user_id', 'movie_id'])
+    ratings_all['tr_val_split'] = tr_val_test_split
+    ratings_all = ratings_all.sort_values(by=['user_id', 'movie_id'])
 
-    n_ratings = ratings_tr_val.rating.shape[0]
+    n_ratings = ratings_all.rating.shape[0]
 
-    n_users = np.max(ratings_tr_val.user_id)
-    _, movies = np.unique(ratings_tr_val.movie_id, return_inverse=True)
+    n_users = np.max(ratings_all.user_id)
+    _, movies = np.unique(ratings_all.movie_id, return_inverse=True)
     n_movies = np.max(movies) + 1
 
-    mat_values_tr_val = np.array(ratings_tr_val.rating)
-    mat_values_tr = np.array(ratings_tr_val.loc[ratings_tr_val['tr_val_split']==0,:].rating)
-    mat_values_val = np.array(ratings_tr_val.loc[ratings_tr_val['tr_val_split']==1,:].rating)
-    mat_values_test = np.array(ratings_tr_val.loc[ratings_tr_val['tr_val_split']==2,:].rating)
+    mat_values_all = np.array(ratings_all.rating)
+    mat_values_tr = np.array(ratings_all.loc[ratings_all['tr_val_split']==0,:].rating)
+    mat_values_val = np.array(ratings_all.loc[ratings_all['tr_val_split']==1,:].rating)
+    mat_values_test = np.array(ratings_all.loc[ratings_all['tr_val_split']==2,:].rating)
+    mat_values_tr_val = np.array(ratings_all.loc[ratings_all['tr_val_split']<=1,:].rating)
 
-    mask_indices_tr_val = np.array(list(zip(ratings_tr_val.user_id-1, ratings_tr_val.movie_id-1)))
-    mask_indices_tr = np.array(list(zip(ratings_tr_val.loc[ratings_tr_val['tr_val_split']==0,:].user_id-1, 
-                                        ratings_tr_val.loc[ratings_tr_val['tr_val_split']==0,:].movie_id-1)))
-    mask_indices_val = np.array(list(zip(ratings_tr_val.loc[ratings_tr_val['tr_val_split']==1,:].user_id-1, 
-                                        ratings_tr_val.loc[ratings_tr_val['tr_val_split']==1,:].movie_id-1)))
-    mask_indices_test = np.array(list(zip(ratings_tr_val.loc[ratings_tr_val['tr_val_split']==2,:].user_id-1, 
-                                        ratings_tr_val.loc[ratings_tr_val['tr_val_split']==2,:].movie_id-1)))
+    mask_indices_all = np.array(list(zip(ratings_all.user_id-1, ratings_all.movie_id-1)))
+    mask_indices_tr = np.array(list(zip(ratings_all.loc[ratings_all['tr_val_split']==0,:].user_id-1, 
+                                        ratings_all.loc[ratings_all['tr_val_split']==0,:].movie_id-1)))
+    mask_indices_val = np.array(list(zip(ratings_all.loc[ratings_all['tr_val_split']==1,:].user_id-1, 
+                                        ratings_all.loc[ratings_all['tr_val_split']==1,:].movie_id-1)))
+    mask_indices_test = np.array(list(zip(ratings_all.loc[ratings_all['tr_val_split']==2,:].user_id-1, 
+                                        ratings_all.loc[ratings_all['tr_val_split']==2,:].movie_id-1)))
+    mask_indices_tr_val = np.array(list(zip(ratings_all.loc[ratings_all['tr_val_split']<=1,:].user_id-1, 
+                                        ratings_all.loc[ratings_all['tr_val_split']<=1,:].movie_id-1)))
 
-    tr_val_split = np.array(ratings_tr_val['tr_val_split'])
+    tr_val_split = np.array(ratings_all['tr_val_split'])
 
     # for dense...
-    data = {'mat_values_tr_val':mat_values_tr_val,
+    data = {'mat_values_all':mat_values_all,
             'mat_values_tr':mat_values_tr,
             'mat_values_val':mat_values_val,
             'mat_values_test':mat_values_test,
-            'mask_indices_tr_val':mask_indices_tr_val,
+            'mask_indices_all':mask_indices_all,
             'mask_indices_tr':mask_indices_tr,
             'mask_indices_val':mask_indices_val,
             'mask_indices_test':mask_indices_test,                   
             'mat_shape':[n_users, n_movies, 1], 
             'mask_tr_val_split':tr_val_split}
+
     if dense:
         mat_tr_val = sparse_array_to_dense(mat_values_tr_val, mask_indices_tr_val, [n_users, n_movies, 1])
 
@@ -223,33 +227,47 @@ def get_data(dataset='movielens-small',
 
         p_tr = train / (train + valid)
         p_val = valid / (train + valid)
-
+        
         split_tr_val = np.random.choice([0,1], size=(n_ratings - len(ratings_ts)), p=(p_tr, p_val))
 
         ratings_tr = ratings_tr_val[split_tr_val==0]
         ratings_val = ratings_tr_val[split_tr_val==1]
 
+        split_tr_val = np.concatenate((split_tr_val, 2 * np.ones(ratings_ts.shape[0], np.int32)))
+
+        mat_values_all = np.array(ratings.rating)
         mat_values_tr_val = np.array(ratings_tr_val.rating)
         mat_values_tr = np.array(ratings_tr.rating)
         mat_values_val = np.array(ratings_val.rating)
         mat_values_ts = np.array(ratings_ts.rating)
 
-        mask_indices_tr_val = np.array(list(zip(ratings_tr_val.user_id-1, ratings_tr_val.movie_id-1)))
-        mask_indices_tr = np.array(list(zip(ratings_tr.user_id-1, ratings_tr.movie_id-1)))
-        mask_indices_val = np.array(list(zip(ratings_val.user_id-1, ratings_val.movie_id-1)))
-        mask_indices_ts = np.array(list(zip(ratings_ts.user_id-1, ratings_ts.movie_id-1)))
+        _, movies_tr = np.unique(ratings_tr.movie_id, return_inverse=True)
+        _, movies_val = np.unique(ratings_val.movie_id, return_inverse=True)
+        _, movies_ts = np.unique(ratings_ts.movie_id, return_inverse=True)
+        _, movies_tr_val = np.unique(ratings_tr_val.movie_id, return_inverse=True)
+
+        mask_indices_all = np.array(list(zip(ratings.user_id-1, movies)))
+        mask_indices_tr_val = np.array(list(zip(ratings_tr_val.user_id-1, movies_tr_val)))
+        mask_indices_tr = np.array(list(zip(ratings_tr.user_id-1, movies_tr)))
+        mask_indices_val = np.array(list(zip(ratings_val.user_id-1, movies_val)))
+        mask_indices_ts = np.array(list(zip(ratings_ts.user_id-1, movies_ts)))
 
         n_users_tr_val = np.max(mask_indices_tr_val[:,0]) + 1
         n_movies_tr_val = np.max(mask_indices_tr_val[:,1]) + 1
 
-        data = {'mat_values_tr_val':mat_values_tr_val,
+        data = {'mat_values_all':mat_values_all,
+                'mask_indices_all':mask_indices_all,
+                'mat_values_tr_val':mat_values_tr_val,
                 'mask_indices_tr_val':mask_indices_tr_val,
                 'mat_values_tr':mat_values_tr,
                 'mask_indices_tr':mask_indices_tr,
                 'mat_values_val':mat_values_val,                        
                 'mask_indices_val':mask_indices_val, 
+                'mat_values_test':mat_values_ts,
+                'mask_indices_test':mask_indices_ts,
                 'mat_shape':[n_users, n_movies, 1], 
-                'mask_tr_val_split':split_tr_val}
+                'mask_tr_val_split':split_tr_val
+                }
 
         if mode=='dense':
             mat_tr_val = sparse_array_to_dense(mat_values_tr_val, mask_indices_tr_val, [n_users_tr_val, n_movies_tr_val, 1])
@@ -263,9 +281,9 @@ def get_data(dataset='movielens-small',
             mask_val = np.zeros([n_users, n_movies])
             mask_val[mask_indices_val] = 1
             data.update({'mat_tr_val':mat_tr_val,
-                'mask_tr_val':mask_tr_val,
-                'mask_tr':mask_tr,
-                'mask_val':mask_val})
+                        'mask_tr_val':mask_tr_val,
+                        'mask_tr':mask_tr,
+                        'mask_val':mask_val})
 
         return data
 
@@ -295,14 +313,17 @@ def get_data(dataset='movielens-small',
 
         p_tr = train / (train + valid)
         p_val = valid / (train + valid)
-
-        split_tr_val = np.random.choice([0,1], size=(n_ratings - len(ratings_ts)), p=(p_tr, p_val))
+        
+        split_tr_val = np.random.choice([0,1], size=(n_ratings - len(ratings_ts)), p=(p_tr, p_val))        
 
         print("     populating ratings arrays...")
 
         ratings_tr = ratings_tr_val[split_tr_val==0]
         ratings_val = ratings_tr_val[split_tr_val==1]
 
+        split_tr_val = np.concatenate((split_tr_val, 2 * np.ones(ratings_ts.shape[0], np.int32)))
+
+        mat_values_all = np.array(ratings.rating)
         mat_values_tr_val = np.array(ratings_tr_val.rating)
         mat_values_tr = np.array(ratings_tr.rating)
         mat_values_val = np.array(ratings_val.rating)
@@ -310,12 +331,20 @@ def get_data(dataset='movielens-small',
 
         print("     populating index arrays...")
 
-        mask_indices_tr_val = np.array(list(zip(ratings_tr_val.user_id-1, ratings_tr_val.movie_id-1)))
-        mask_indices_tr = np.array(list(zip(ratings_tr.user_id-1, ratings_tr.movie_id-1)))
-        mask_indices_val = np.array(list(zip(ratings_val.user_id-1, ratings_val.movie_id-1)))
-        mask_indices_ts = np.array(list(zip(ratings_ts.user_id-1, ratings_ts.movie_id-1)))
+        _, movies_tr_val = np.unique(ratings_tr_val.movie_id, return_inverse=True)
+        _, movies_tr = np.unique(ratings_tr.movie_id, return_inverse=True)
+        _, movies_val = np.unique(ratings_val.movie_id, return_inverse=True)
+        _, movies_ts = np.unique(ratings_ts.movie_id, return_inverse=True)
 
-        data = {'mat_values_tr_val':mat_values_tr_val,
+        mask_indices_all = np.array(list(zip(ratings.user_id-1, movies)))
+        mask_indices_tr_val = np.array(list(zip(ratings_tr_val.user_id-1, movies_tr_val)))
+        mask_indices_tr = np.array(list(zip(ratings_tr.user_id-1, movies_tr)))
+        mask_indices_val = np.array(list(zip(ratings_val.user_id-1, movies_val)))
+        mask_indices_ts = np.array(list(zip(ratings_ts.user_id-1, movies_ts)))
+
+        data = {'mat_values_all':mat_values_all,
+                'mask_indices_all':mask_indices_all,
+                'mat_values_tr_val':mat_values_tr_val,
                 'mask_indices_tr_val':mask_indices_tr_val,
                 'mat_values_tr':mat_values_tr,
                 'mask_indices_tr':mask_indices_tr,
