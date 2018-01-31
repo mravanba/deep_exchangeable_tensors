@@ -319,7 +319,7 @@ def main(opts, logfile=None, restore_point=None):
         if restore_point is not None:
             saver.restore(sess, restore_point)
 
-        best_log = "logs/" + opts.get("model_name", "TEST") + "_best.log"
+        best_log = "logs/best_" + opts.get("model_name", "TEST") + ".log"
         print("epoch,train,valid,test\n", file=open(best_log, "a"))
         for ep in range(opts['epochs']):
             begin = time.time()
@@ -422,17 +422,7 @@ def main(opts, logfile=None, restore_point=None):
                         entries_val_count[sample_val_] = 1 # init zeros()
 
                 loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
-                
-                if loss_val_ < min_loss: # keep track of the best validation loss 
-                    min_loss = loss_val_
-                    min_loss_epoch = ep+1
-                    min_train = rec_loss_tr_
-                    min_test = loss_ts_
-                    # print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
-                    # if ep > 1000 and (min_loss < 0.93): # save the best paramters after they get sufficiently good. TODO: a better way of doing this
-                    #     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
-                    #     print("Model saved in file: %s" % save_path, file=LOG)
-                
+               
                 gc.collect()
                 ## Test Loss
                 print("Testing: ")
@@ -468,14 +458,24 @@ def main(opts, logfile=None, restore_point=None):
                         entries_ts_count[sample_ts_] = 1 # init zeros()
 
                 loss_ts_ = np.sqrt(np.sum(entries_ts) / np.sum(entries_ts_count))
-
+ 
+                if loss_val_ < min_loss: # keep track of the best validation loss 
+                    min_loss = loss_val_
+                    min_loss_epoch = ep+1
+                    min_train = rec_loss_tr_
+                    min_test = loss_ts_
+                    print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
+                    if opts.get("save_best", False): 
+                        save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
+                        print("Model saved in file: %s" % save_path, file=LOG)
+                
                 if loss_ts_ < min_ts_loss: # keep track of the best test loss 
                     min_ts_loss = loss_ts_
                     min_val_ts = loss_val_
 
-                # if (ep+1) % 500 == 0:
-                #     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
-                #     print("Model saved in file: %s" % save_path, file=LOG)
+                if opts.get("checkpoint_interval", 10000000) % (ep+1) == 0:
+                    save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
+                    print("Model saved in file: %s" % save_path, file=LOG)
 
                 losses['train'].append(loss_tr_)
                 losses['valid'].append(loss_val_)
