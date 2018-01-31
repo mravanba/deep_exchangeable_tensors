@@ -622,8 +622,12 @@ if __name__ == "__main__":
            
     }
     if auto_restore:
-        restore_point = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt" % (opts.get('model_name', "test"))))[-1]
-        print("Restoring from %s" % restore_point)
+        checkpoints = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt" % (opts.get('model_name', "test"))))
+        if len(checkpoints) > 0:
+            restore_point = checkpoints[-1]
+            print("Restoring from %s" % restore_point)
+        else:
+            restore_point = None
     else:
         restore_point = None
     main(opts, restore_point=restore_point)
