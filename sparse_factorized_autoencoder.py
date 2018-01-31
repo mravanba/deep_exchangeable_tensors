@@ -206,7 +206,11 @@ def main(opts, logfile=None, restore_point=None):
         LOG = sys.stdout
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
     path = opts['data_path']
-    data = get_data(path, train=.75, valid=.05, test=.2, mode='sparse', fold=1) # ml-100k uses official test set so only the valid paramter matters
+
+    if 'movielens-100k' in path:
+        data = get_data(path, train=.75, valid=.05, test=.2, mode='sparse', fold=1) # ml-100k uses official test set so only the valid paramter matters
+    else: 
+        data = get_data(path, train=.6, valid=.2, test=.2, mode='sparse', fold=1)
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_shape']
@@ -385,7 +389,7 @@ def main(opts, logfile=None, restore_point=None):
             if (ep+1) % opts['validate_freq'] == 0: # Validate and test every validate_freq epochs
                 
                 ## Validation Loss     
-                # print("Validating: ")
+                print("Validating: ")
                 entries_val = np.zeros(data['mask_indices_all'].shape[0])
                 entries_val_count = np.zeros(data['mask_indices_all'].shape[0])
                 num_entries_val = data['mask_indices_val'].shape[0]
@@ -424,14 +428,14 @@ def main(opts, logfile=None, restore_point=None):
                     min_loss_epoch = ep+1
                     min_train = rec_loss_tr_
                     min_test = loss_ts_
-                    print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
-                    if ep > 1000 and (min_loss < 0.93): # save the best paramters after they get sufficiently good. TODO: a better way of doing this
-                        save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
-                        print("Model saved in file: %s" % save_path, file=LOG)
+                    # print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
+                    # if ep > 1000 and (min_loss < 0.93): # save the best paramters after they get sufficiently good. TODO: a better way of doing this
+                    #     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
+                    #     print("Model saved in file: %s" % save_path, file=LOG)
                 
-
+                gc.collect()
                 ## Test Loss
-                # print("Testing: ")
+                print("Testing: ")
                 entries_ts = np.zeros(data['mask_indices_all'].shape[0])
                 entries_ts_count = np.zeros(data['mask_indices_all'].shape[0])
                 num_entries_ts = data['mask_indices_test'].shape[0]
@@ -469,9 +473,9 @@ def main(opts, logfile=None, restore_point=None):
                     min_ts_loss = loss_ts_
                     min_val_ts = loss_val_
 
-                if (ep+1) % 500 == 0:
-                    save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
-                    print("Model saved in file: %s" % save_path, file=LOG)
+                # if (ep+1) % 500 == 0:
+                #     save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
+                #     print("Model saved in file: %s" % save_path, file=LOG)
 
                 losses['train'].append(loss_tr_)
                 losses['valid'].append(loss_val_)
@@ -483,9 +487,9 @@ def main(opts, logfile=None, restore_point=None):
                                             min_train, min_test, min_loss_epoch, loss_ts_,
                                             min_ts_loss, min_val_ts), file=LOG)
                 gc.collect()
-            if loss_val_ > min_loss * 1.075:
-                # overfitting: break if validation loss diverges
-                break
+            # if loss_val_ > min_loss * 1.075:
+            #     # overfitting: break if validation loss diverges
+            #     break
     return losses
 
 if __name__ == "__main__":
@@ -498,6 +502,7 @@ if __name__ == "__main__":
     path = 'movielens-100k'
     # path = 'movielens-1M'
     # path = 'netflix/6m'
+    # path = 'netflix/full'
 
     ap = False# use attention pooling
     lossfn = "ce"    
@@ -505,13 +510,13 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:        
-        maxN = 30000
-        maxM = 30000
+        maxN = 300
+        maxM = 300
         minibatch_size = 5000000        
         units = 220
         latent_features = 100
         learning_rate = 0.0005
-        validate_freq = 1 # perform validation every validate_freq epochs 
+        validate_freq = 10 # perform validation every validate_freq epochs 
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -521,15 +526,25 @@ if __name__ == "__main__":
         units = 220
         latent_features = 100
         learning_rate = 0.0005
-        validate_freq = 50 # perform validation every validate_freq epochs
+        validate_freq = 10 # perform validation every validate_freq epochs
 
     if 'netflix/6m' in path:
-        maxN = 300
-        maxM = 300
+        maxN = 1100
+        maxM = 1100
         minibatch_size = 5000000
-        units = 16
-        latent_features = 5
-        learning_rate = 0.005
+        units = 110
+        latent_features = 50
+        learning_rate = 0.0005
+        validate_freq = 1 # perform validation every validate_freq epochs
+
+    if 'netflix/full' in path:
+        maxN = 1100 
+        maxM = 1100 
+        minibatch_size = 5000000
+        units = 110
+        latent_features = 50
+        learning_rate = 0.0005
+        validate_freq = 1 # perform validation every validate_freq epochs
 
 
     opts ={'epochs': 100000,#never-mind this. We have to implement look-ahead to report the best result.
