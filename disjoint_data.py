@@ -56,7 +56,7 @@ def train_test_valid(df, train=0.8, test=0.2, valid=0., rng=None, return_idx=Fal
     if return_idx and valid > 0.:
         raise NotImplementedError("Haven't implemented index returning for validation set")
     if return_idx:
-        test_mask, test_values, df, idx = get_n(df, int(df.shape[0] * test),rng=rng)
+        test_mask, test_values, df, idx = get_n(df, int(df.shape[0] * test),rng=rng, return_idx=return_idx)
     else:
         test_mask, test_values, df = get_n(df, int(df.shape[0] * test),rng=rng)
     if valid > 0.:

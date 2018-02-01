@@ -1,20 +1,21 @@
 from __future__ import print_function
-
-import tensorflow as tf
+# Standard lib imports
 import sys
+import gc
+import glob
+import math
+import time
+from collections import OrderedDict
+# Helper lib imports
+from tqdm import tqdm
+# Math imports
+import tensorflow as tf
+from scipy.sparse import csr_matrix
+# Model imports
 from base import Model
 from util import get_data
 from sparse_util import *
-import math
-import time
-from tqdm import tqdm
-from collections import OrderedDict
-import gc
-<<<<<<< HEAD
-from scipy.sparse import csr_matrix
-=======
-import glob
->>>>>>> b94938599e82764f9cc13f6141c1221eaafcfe08
+
 
 LOG = sys.stdout
 
@@ -142,16 +143,18 @@ def neighbourhood_sampling(mask_indices, minibatch_size, iters_per_epoch, hops=4
 
 def neighbourhood_validate(sparse_matrix, mat_values_val, mask_indices_val, mask_indices_tr, 
                            mask_indices_all, tf_dic,
-                           hops=4, n_samp=100, lossfn="ce"):
+                           hops=4, n_samp=100, lossfn="ce", minibatch_size=None):
+    if minibatch_size is None:
+        minibatch_size = mat_values_val.shape[0]
     loss_val_ = 0.
     n = 0
     sess = tf_dic["sess"]
     iters_per_val = max(1, mat_values_val.shape[0] / minibatch_size / hops / n_samp)
     for sample_ in tqdm(np.array_split(np.arange(mat_values_val.shape[0]), iters_per_val), 
-                        total=iters_per_epoch):
+                        total=iters_per_val):
         sample_tr_ = sample_k_neighbours(mask_indices_val[sample_, :], 
                                          mask_indices_tr, hops, n_samp)
-        sample_tr_val_ = np.concatenate([mask_indices_all[sample_, :], sample_tr], axis=0)
+        sample_tr_val_ = np.concatenate([mask_indices_all[sample_, :], sample_tr_], axis=0)
 
         mat_values_tr_ = np.array(sparse_matrix[sample_tr_[:,0], 
                                                 sample_tr_[:,1]]).flatten()
@@ -163,7 +166,7 @@ def neighbourhood_validate(sparse_matrix, mat_values_val, mask_indices_val, mask
         mask_indices_tr_val_ = sample_tr_val_
 
         mask_split_ = np.concatenate([np.ones(sample_.shape[0]), 
-                                      np.zeros(sample_tr.shape[0])], axis=0)
+                                      np.zeros(sample_tr_.shape[0])], axis=0)
 
         val_dict = {tf_dic["mat_values_tr"]:mat_values_tr_ if lossfn =="mse" else one_hot(mat_values_tr_),
                     tf_dic["mask_indices_tr"]:mask_indices_tr_,
@@ -173,7 +176,7 @@ def neighbourhood_validate(sparse_matrix, mat_values_val, mask_indices_val, mask
                     tf_dic["mask_split"]:mask_split_
                     }
 
-        bloss_val, = sess.run([rec_loss_val], feed_dict=val_dict)
+        bloss_val, = sess.run([tf_dic["rec_loss_val"]], feed_dict=val_dict)
         loss_val_ += bloss_val * sample_.shape[0]
         n += sample_.shape[0]
     return np.sqrt(loss_val_ / float(n))
@@ -371,12 +374,13 @@ def main(opts, logfile=None, restore_point=None):
             minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
             iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
         elif 'neighbourhood' in opts['sample_mode']:
-            weights = csr_matrix((np.ones_like(data['mat_values_tr_val']), 
-                  (data['mask_indices_all'][:,0], 
-                   data['mask_indices_all'][:, 1])),
+            minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
+            weights = csr_matrix((np.ones_like(data['mat_values_tr']), 
+                  (data['mask_indices_tr'][:,0], 
+                   data['mask_indices_tr'][:,1])),
                    data["mat_shape"][0:2])
 
-            sp_mat = csr_matrix((data['mat_values_tr_val'], 
+            sp_mat = csr_matrix((data['mat_values_all'], 
                   (data['mask_indices_all'][:,0], 
                    data['mask_indices_all'][:, 1])),
                    data["mat_shape"][0:2])
@@ -441,11 +445,15 @@ def main(opts, logfile=None, restore_point=None):
                     gc.collect()
             
             elif 'neighbourhood' in opts['sample_mode']:
+                hops = opts.get("n_hops", 4)
+                n_samp = opts.get("n_neighbours", 100)
+                iters_per_epoch = max(1,data['mask_indices_tr'].shape[0] /  minibatch_size)
+ 
                 for sample_ in tqdm(neighbourhood_sampling(data['mask_indices_tr'], minibatch_size, iters_per_epoch, hops=4),
                                     total=iters_per_epoch):
                     w = np.array(weights[sample_[:,0], sample_[:,1]]).flatten()
                     mat_values = np.array(sp_mat[sample_[:,0], sample_[:,1]]).flatten()
-                    mat_weight = weights.sum() / data['mask_indices_tr'].shape[0] / w
+                    mat_weight = weights.sum() / float(data['mask_indices_tr'].shape[0]) / w
                     mask_indices = sample_
                     weights = weights + csr_matrix((np.ones(sample_.shape[0]), 
                                                    (sample_[:,0], sample_[:,1])), 
@@ -500,7 +508,8 @@ def main(opts, logfile=None, restore_point=None):
                               "mat_values_val":mat_values_val,
                               "mask_indices_val":mask_indices_val,
                               "mask_indices_tr_val":mask_indices_tr_val,
-                              "mask_split":mask_split
+                              "mask_split":mask_split,
+                              "rec_loss_val":rec_loss_val
                               }
                     hops = opts.get("n_hops", 4)
                     n_samp = opts.get("n_neighbours", 100)
@@ -512,7 +521,8 @@ def main(opts, logfile=None, restore_point=None):
                                     tf_dic=tf_dic, 
                                     hops=hops, 
                                     n_samp=n_samp, 
-                                    lossfn=lossfn)
+                                    lossfn=lossfn,
+                                    minibatch_size=minibatch_size / 100) #TODO: what should this be?
 
                     loss_ts_ = neighbourhood_validate(sparse_matrix=sp_mat, 
                                     mat_values_val=data['mat_values_test'], 
@@ -522,7 +532,8 @@ def main(opts, logfile=None, restore_point=None):
                                     tf_dic=tf_dic, 
                                     hops=hops, 
                                     n_samp=n_samp, 
-                                    lossfn=lossfn)
+                                    lossfn=lossfn,
+                                    minibatch_size=minibatch_size / 100)
                 else:
                     entries_val = np.zeros(data['mask_indices_all'].shape[0])
                     entries_val_count = np.zeros(data['mask_indices_all'].shape[0])
@@ -755,7 +766,7 @@ if __name__ == "__main__":
                 }
             },
            'lr':learning_rate,
-           'sample_mode':'conditional_sample_sparse' # by_row_column_density, uniform_over_dense_values, conditional_sample_sparse
+           'sample_mode':'neighbourhood'#'conditional_sample_sparse' # by_row_column_density, uniform_over_dense_values, conditional_sample_sparse
            
     }
     if auto_restore:        

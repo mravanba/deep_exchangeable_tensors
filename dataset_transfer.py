@@ -1,5 +1,6 @@
 from __future__ import print_function
 import numpy as np
+import pandas as pd
 import h5py
 from sparse_factorized_autoencoder_disjoint import main as train_model_with_opts
 from sparse_factorized_autoencoder_disjoint import set_opts, one_hot
@@ -95,7 +96,7 @@ def yahoo():
     return yahoo, eval_yahoo
 
 def softmax(x):
-    e = np.exp(x - np.max(x))
+    e = np.exp(x - np.max(x, axis=1)[:,None])
     return e / e.sum(axis=1)[:,None]
 
 def flixter():
@@ -196,7 +197,8 @@ def netflix():
     #                                    p_new=0.07, max_id_m=10000, max_id_u=17770)
     return {}, lambda x, y: 0.
 
-def compbio():
+def compbio(seed=12345, n=300000):
+    rng = np.random.RandomState(seed)
     mat = pd.read_csv("./data/bio/nonRedun.mat", sep="\t", index_col=0)
     mask = np.zeros((0, 2), "int")
     values = np.zeros((0))
@@ -211,14 +213,17 @@ def compbio():
     idx = values < np.percentile(values, 99.95)
     values = values[idx]
     mask = mask[idx, :]
-    values_disc = np.zeros_like(values)
+    idx = rng.permutation(values.shape[0])[0:n]
+    values = values[idx]
+    mask = mask[idx, :]
+    values_disc = np.zeros_like(values, dtype="int")
     centers = np.zeros(5)
     for i, p in enumerate([20, 40, 60, 80, 100]):
         idx = np.logical_and(values_disc == 0, values <= np.percentile(values, p))
         values_disc[idx] = i+1
         centers[i] = (values[idx]).mean()
     
-    (train_mask, train_values), (test_mask, test_values), idx = train_test_valid(np.concatenate([mask, values_disc], axis=1), 
+    (train_mask, train_values), (test_mask, test_values), idx = train_test_valid(np.concatenate([mask, values_disc[:, None]], axis=1), 
                                                                             train=0.8, test=0.2, valid=0., return_idx=True)
     
     split_pts = np.zeros_like(values, "int")
@@ -246,7 +251,7 @@ def compbio():
         out = sess.run([fns["out_val"]], val_dict)[0]
         expval = (((softmax(out.reshape(-1,5))) * centers[None, :]).sum(axis=1))
         mask = (split_pts == 2)
-        return np.sqrt(np.square(mask *(expval- M[np.where(M)])).sum() / (mask).sum())
+        return np.sqrt(np.square(mask * (expval - values)).sum() / (mask).sum())
     return data, eval_compbio
 
 def main():
