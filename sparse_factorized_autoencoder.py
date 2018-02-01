@@ -10,6 +10,7 @@ import time
 from tqdm import tqdm
 from collections import OrderedDict
 import gc
+from scipy.sparse import csr_matrix
 
 LOG = sys.stdout
 
@@ -93,23 +94,85 @@ def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM): # 
 
             yield inds_tr, inds_val, inds_tr_val, inds_ts, inds_all
 
-def neighbourhood_sampling(mask, n=1, batch_size=None, replace=False, unique_seed=False, hops=1):
-    axis = np.random.randint(0,2)
-    idx = np.arange(mask.shape[0])
-    if unique_seed:
-        seed_set = np.unique(mask[:, axis])
-    else:
-        seed_set = mask[:, axis]
-    seed_nodes = np.random.choice(seed_set, n, replace)
-    batch = np.array([], dtype="int")
-    for _ in xrange(hops):
-        neighbours_idx = idx[np.isin(mask[:, axis], np.unique(seed_nodes))]
-        neighbours_idx = np.random.choice(neighbours_idx, size=[n], replace=False)
-        neighbours = mask[neighbours_idx, :]
-        axis = (axis + 1) % 2
-        seed_nodes = neighbours[:, axis]
-        batch = np.concatenate([batch, neighbours_idx], axis=0)
-    return batch
+def get_neighbours(seed_set, full_set, axis=None):
+    if axis is None:
+        axis = np.random.randint(2)
+    in_neighbourhood = np.isin(full_set[:,axis], seed_set[:, axis])
+    return full_set[in_neighbourhood, :]
+
+def sample_neighbours(seed_set, full_set, n=None):
+    out = np.zeros((0,2), dtype="int")
+    for axis in [0, 1]:
+        neighbours = get_neighbours(seed_set, full_set, axis)
+        if n is None:
+            n = neighbours.shape[0]
+        if n > neighbours.shape[0]:
+            out = np.concatenate([out, neighbours], axis=0)
+        else:
+            idx = np.random.choice(neighbours.shape[0], n, replace=False)
+            out = np.concatenate([out, neighbours[idx, :]], axis=0)
+    return out
+
+def sample_k_neighbours(seed_set, full_set, hops=4, n=None):
+    if n is not None:
+        n /= 2
+    out = np.zeros((0,2), dtype="int")
+    extra_nodes = seed_set
+    for hop in range(hops):
+        extra_nodes = sample_neighbours(extra_nodes, full_set, n)
+        out = np.concatenate([out, extra_nodes], axis=0)
+    return out
+
+def neighbourhood_sampling(mask_indices, minibatch_size, iters_per_epoch, hops=4):
+    num_vals = mask_indices.shape[0]
+    minibatch_size = np.minimum(minibatch_size, num_vals) // (1+hops)
+    
+    for n in range(iters_per_epoch):
+        sample = np.random.choice(num_vals, size=minibatch_size, replace=False)
+        seed_set = mask_indices[sample]
+        extra_nodes = seed_set
+        for hop in range(hops):
+            extra_nodes = sample_neighbours(extra_nodes, mask_indices, minibatch_size//2)
+            seed_set = np.concatenate([seed_set, extra_nodes], axis=0)
+        yield seed_set
+
+def neighbourhood_validate(sparse_matrix, mat_values_val, mask_indices_val, mask_indices_tr, 
+                           mask_indices_all, tf_dic,
+                           hops=4, n_samp=100, lossfn="ce"):
+    loss_val_ = 0.
+    n = 0
+    sess = tf_dic["sess"]
+    iters_per_val = max(1, mat_values_val.shape[0] / minibatch_size / hops / n_samp)
+    for sample_ in tqdm(np.array_split(np.arange(mat_values_val.shape[0]), iters_per_val), 
+                        total=iters_per_epoch):
+        sample_tr_ = sample_k_neighbours(mask_indices_val[sample_, :], 
+                                         mask_indices_tr, hops, n_samp)
+        sample_tr_val_ = np.concatenate([mask_indices_all[sample_, :], sample_tr], axis=0)
+
+        mat_values_tr_ = np.array(sparse_matrix[sample_tr_[:,0], 
+                                                sample_tr_[:,1]]).flatten()
+        mat_values_tr_val_ = np.array(sparse_matrix[sample_tr_val_[:,0], 
+                                                    sample_tr_val_[:,1]]).flatten()
+        
+        mask_indices_tr_ = sample_tr_
+        mask_indices_val_ = mask_indices_all[sample_]
+        mask_indices_tr_val_ = sample_tr_val_
+
+        mask_split_ = np.concatenate([np.ones(sample_.shape[0]), 
+                                      np.zeros(sample_tr.shape[0])], axis=0)
+
+        val_dict = {tf_dic["mat_values_tr"]:mat_values_tr_ if lossfn =="mse" else one_hot(mat_values_tr_),
+                    tf_dic["mask_indices_tr"]:mask_indices_tr_,
+                    tf_dic["mat_values_val"]:mat_values_tr_val_ if lossfn =="mse" else one_hot(mat_values_tr_val_),
+                    tf_dic["mask_indices_val"]:mask_indices_val_,
+                    tf_dic["mask_indices_tr_val"]:mask_indices_tr_val_,
+                    tf_dic["mask_split"]:mask_split_
+                    }
+
+        bloss_val, = sess.run([rec_loss_val], feed_dict=val_dict)
+        loss_val_ += bloss_val * sample_.shape[0]
+        n += sample_.shape[0]
+    return np.sqrt(loss_val_ / float(n))
 
 def rec_loss_fn_sp(mat_values, mask_indices, rec_values, mask_split=None):
     if mask_split is None:
@@ -124,7 +187,7 @@ def get_losses(lossfn, reg_loss, mat_values_tr, mat_values_val, mask_indices_tr,
     elif lossfn == "ce":
         # Train cross entropy for optimization
         out = tf.reshape(out_tr, shape=[-1,5])
-        rec_loss = -tf.reduce_mean(tf.reshape(mat_values_tr, shape=[-1,5]) * (out - tf.reduce_logsumexp(out, axis=1, keep_dims=True)))
+        rec_loss = - tf.reduce_mean(mask_split * tf.reduce_sum(tf.reshape(mat_values_tr, shape=[-1,5]) * (out - tf.reduce_logsumexp(out, axis=1, keep_dims=True)), axis=1))
         total_loss = rec_loss + reg_loss
 
         # Train RMSE for reporting
@@ -303,7 +366,16 @@ def main(opts, logfile=None, restore_point=None):
         elif 'uniform_over_dense_values' in opts['sample_mode']:
             minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
             iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
-        
+        elif 'neighbourhood' in opts['sample_mode']:
+            weights = csr_matrix((np.ones_like(data['mat_values_tr_val']), 
+                  (data['mask_indices_all'][:,0], 
+                   data['mask_indices_all'][:, 1])),
+                   data["mat_shape"][0:2])
+
+            sp_mat = csr_matrix((data['mat_values_tr_val'], 
+                  (data['mask_indices_all'][:,0], 
+                   data['mask_indices_all'][:, 1])),
+                   data["mat_shape"][0:2])
         
         min_loss = 5.
         min_train = 5.
@@ -336,6 +408,7 @@ def main(opts, logfile=None, restore_point=None):
 
                     tr_dict = {mat_values_tr:mat_values if lossfn == "mse" else one_hot(mat_values),
                                 mask_indices_tr:mask_indices,
+                                mask_split:np.ones_like(mat_values)
                                 }
                     
                     returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
@@ -352,6 +425,30 @@ def main(opts, logfile=None, restore_point=None):
 
                     tr_dict = {mat_values_tr:mat_values if lossfn == "mse" else one_hot(mat_values),
                                 mask_indices_tr:mask_indices,
+                                mask_split:np.ones_like(mat_values)
+                                }
+                    
+                    returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
+                    bloss_, brec_loss_ = [i for i in returns[1:3]] # ema_op may be empty and we only need these two outputs
+
+                    loss_tr_ += bloss_
+                    rec_loss_tr_ += np.sqrt(brec_loss_)
+                    gc.collect()
+            
+            elif 'neighbourhood' in opts['sample_mode']:
+                for sample_ in tqdm(neighbourhood_sampling(data['mask_indices_tr'], minibatch_size, iters_per_epoch, hops=4),
+                                    total=iters_per_epoch):
+                    w = np.array(weights[sample_[:,0], sample_[:,1]]).flatten()
+                    mat_values = np.array(sp_mat[sample_[:,0], sample_[:,1]]).flatten()
+                    mat_weight = weights.sum() / data['mask_indices_tr'].shape[0] / w
+                    mask_indices = sample_
+                    weights = weights + csr_matrix((np.ones(sample_.shape[0]), 
+                                                   (sample_[:,0], sample_[:,1])), 
+                                                   data["mat_shape"][0:2])
+
+                    tr_dict = {mat_values_tr:mat_values if lossfn == "mse" else one_hot(mat_values),
+                                mask_indices_tr:mask_indices,
+                                mask_split:mat_weight
                                 }
                     
                     returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
@@ -369,6 +466,7 @@ def main(opts, logfile=None, restore_point=None):
 
                     tr_dict = {mat_values_tr:mat_values if lossfn == "mse" else one_hot(mat_values),
                                 mask_indices_tr:mask_indices,
+                                mask_split:np.ones_like(mat_values)
                                 }
                     
                     returns = sess.run([train_step, total_loss, rec_loss] + ema_op, feed_dict=tr_dict)
@@ -391,75 +489,103 @@ def main(opts, logfile=None, restore_point=None):
                 
                 ## Validation Loss     
                 print("Validating: ")
-                entries_val = np.zeros(data['mask_indices_all'].shape[0])
-                entries_val_count = np.zeros(data['mask_indices_all'].shape[0])
-                num_entries_val = data['mask_indices_val'].shape[0]
-                                
-                while np.sum(entries_val_count) < .95 * num_entries_val:
-                    for sample_tr_, sample_val_, sample_tr_val_, _, _ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
+                if opts['sample_mode'] == "neighbourhood":
+                    tf_dic = {"sess":sess,"mat_values_tr":mat_values_tr,
+                              "mask_indices_tr":mask_indices_tr,
+                              "mat_values_val":mat_values_val,
+                              "mask_indices_val":mask_indices_val,
+                              "mask_indices_tr_val":mask_indices_tr_val,
+                              "mask_split":mask_split
+                              }
+                    hops = opts.get("n_hops", 4)
+                    n_samp = opts.get("n_neighbours", 100)
+                    loss_val_ = neighbourhood_validate(sparse_matrix=sp_mat, 
+                                    mat_values_val=data['mat_values_val'], 
+                                    mask_indices_val=data['mask_indices_val'], 
+                                    mask_indices_tr=data['mask_indices_tr'], 
+                                    mask_indices_all=data['mask_indices_all'], 
+                                    tf_dic=tf_dic, 
+                                    hops=hops, 
+                                    n_samp=n_samp, 
+                                    lossfn=lossfn)
 
-                        mat_values_tr_ = data['mat_values_all'][sample_tr_]
-                        mat_values_tr_val_ = data['mat_values_all'][sample_tr_val_]
+                    loss_ts_ = neighbourhood_validate(sparse_matrix=sp_mat, 
+                                    mat_values_val=data['mat_values_test'], 
+                                    mask_indices_val=data['mask_indices_test'], 
+                                    mask_indices_tr=data['mask_indices_tr'], 
+                                    mask_indices_all=data['mask_indices_all'], 
+                                    tf_dic=tf_dic, 
+                                    hops=hops, 
+                                    n_samp=n_samp, 
+                                    lossfn=lossfn)
+                else:
+                    entries_val = np.zeros(data['mask_indices_all'].shape[0])
+                    entries_val_count = np.zeros(data['mask_indices_all'].shape[0])
+                    num_entries_val = data['mask_indices_val'].shape[0]
+                                    
+                    while np.sum(entries_val_count) < .95 * num_entries_val:
+                        for sample_tr_, sample_val_, sample_tr_val_, _, _ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
 
-                        mask_indices_tr_ = data['mask_indices_all'][sample_tr_]
-                        mask_indices_val_ = data['mask_indices_all'][sample_val_]
-                        mask_indices_tr_val_ = data['mask_indices_all'][sample_tr_val_]
+                            mat_values_tr_ = data['mat_values_all'][sample_tr_]
+                            mat_values_tr_val_ = data['mat_values_all'][sample_tr_val_]
 
-                        mask_split_ = (data['mask_tr_val_split'][sample_tr_val_] == 1) * 1.
-                
-                        val_dict = {mat_values_tr:mat_values_tr_ if lossfn =="mse" else one_hot(mat_values_tr_),
-                                    mask_indices_tr:mask_indices_tr_,
-                                    mat_values_val:mat_values_tr_val_ if lossfn =="mse" else one_hot(mat_values_tr_val_),
-                                    mask_indices_val:mask_indices_val_,
-                                    mask_indices_tr_val:mask_indices_tr_val_,
-                                    mask_split:mask_split_
+                            mask_indices_tr_ = data['mask_indices_all'][sample_tr_]
+                            mask_indices_val_ = data['mask_indices_all'][sample_val_]
+                            mask_indices_tr_val_ = data['mask_indices_all'][sample_tr_val_]
+
+                            mask_split_ = (data['mask_tr_val_split'][sample_tr_val_] == 1) * 1.
+                    
+                            val_dict = {mat_values_tr:mat_values_tr_ if lossfn =="mse" else one_hot(mat_values_tr_),
+                                        mask_indices_tr:mask_indices_tr_,
+                                        mat_values_val:mat_values_tr_val_ if lossfn =="mse" else one_hot(mat_values_tr_val_),
+                                        mask_indices_val:mask_indices_val_,
+                                        mask_indices_tr_val:mask_indices_tr_val_,
+                                        mask_split:mask_split_
+                                        }
+
+                            bloss_val, beout_val, = sess.run([rec_loss_val, eout_val], feed_dict=val_dict)
+
+                            losses_val = (data['mat_values_all'][sample_val_] - beout_val[mask_split_ == 1.])**2
+
+                            entries_val[sample_val_] = losses_val # intit zeros(data['mat_values_all'].size())
+                            entries_val_count[sample_val_] = 1 # init zeros()
+                    loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
+                    ## Test Loss
+                    print("Testing: ")
+                    entries_ts = np.zeros(data['mask_indices_all'].shape[0])
+                    entries_ts_count = np.zeros(data['mask_indices_all'].shape[0])
+                    num_entries_ts = data['mask_indices_test'].shape[0]
+
+                    while np.sum(entries_ts_count) < .95 * num_entries_ts:
+                        for sample_tr_, _, sample_tr_val_, sample_ts_, sample_all_ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
+
+                            mat_values_tr_val_ = data['mat_values_all'][sample_tr_val_]
+                            mat_values_all_ = data['mat_values_all'][sample_all_]
+
+                            mask_indices_tr_val_ = data['mask_indices_all'][sample_tr_val_]
+                            mask_indices_ts_ = data['mask_indices_all'][sample_ts_]
+                            mask_indices_all_ = data['mask_indices_all'][sample_all_]
+
+                            mask_split_ = (data['mask_tr_val_split'][sample_all_] == 2) * 1.
+                                                
+                            test_dict = {mat_values_tr:mat_values_tr_val_ if lossfn =="mse" else one_hot(mat_values_tr_val_),
+                                        mask_indices_tr:mask_indices_tr_val_,
+                                        mat_values_val:mat_values_all_ if lossfn =="mse" else one_hot(mat_values_all_),
+                                        mask_indices_val:mask_indices_ts_,
+                                        mask_indices_tr_val:mask_indices_all_,
+                                        mask_split:mask_split_
                                     }
 
-                        bloss_val, beout_val, = sess.run([rec_loss_val, eout_val], feed_dict=val_dict)
+                            bloss_test, beout_ts, = sess.run([rec_loss_val, eout_val], feed_dict=test_dict)
 
-                        losses_val = (data['mat_values_all'][sample_val_] - beout_val[mask_split_ == 1.])**2
+                            losses_ts = (data['mat_values_all'][sample_ts_] - beout_ts[mask_split_ == 1.])**2
 
-                        entries_val[sample_val_] = losses_val # intit zeros(data['mat_values_all'].size())
-                        entries_val_count[sample_val_] = 1 # init zeros()
+                            entries_ts[sample_ts_] = losses_ts # intit zeros(data['mat_values_all'].size())
+                            entries_ts_count[sample_ts_] = 1 # init zeros()
 
-                loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
+                    loss_ts_ = np.sqrt(np.sum(entries_ts) / np.sum(entries_ts_count))
+                
                 losses['valid'].append(loss_val_)
-
-                gc.collect()
-                ## Test Loss
-                print("Testing: ")
-                entries_ts = np.zeros(data['mask_indices_all'].shape[0])
-                entries_ts_count = np.zeros(data['mask_indices_all'].shape[0])
-                num_entries_ts = data['mask_indices_test'].shape[0]
-
-                while np.sum(entries_ts_count) < .95 * num_entries_ts:
-                    for sample_tr_, _, sample_tr_val_, sample_ts_, sample_all_ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
-
-                        mat_values_tr_val_ = data['mat_values_all'][sample_tr_val_]
-                        mat_values_all_ = data['mat_values_all'][sample_all_]
-
-                        mask_indices_tr_val_ = data['mask_indices_all'][sample_tr_val_]
-                        mask_indices_ts_ = data['mask_indices_all'][sample_ts_]
-                        mask_indices_all_ = data['mask_indices_all'][sample_all_]
-
-                        mask_split_ = (data['mask_tr_val_split'][sample_all_] == 2) * 1.
-                                            
-                        test_dict = {mat_values_tr:mat_values_tr_val_ if lossfn =="mse" else one_hot(mat_values_tr_val_),
-                                     mask_indices_tr:mask_indices_tr_val_,
-                                     mat_values_val:mat_values_all_ if lossfn =="mse" else one_hot(mat_values_all_),
-                                     mask_indices_val:mask_indices_ts_,
-                                     mask_indices_tr_val:mask_indices_all_,
-                                     mask_split:mask_split_
-                                }
-
-                        bloss_test, beout_ts, = sess.run([rec_loss_val, eout_val], feed_dict=test_dict)
-
-                        losses_ts = (data['mat_values_all'][sample_ts_] - beout_ts[mask_split_ == 1.])**2
-
-                        entries_ts[sample_ts_] = losses_ts # intit zeros(data['mat_values_all'].size())
-                        entries_ts_count[sample_ts_] = 1 # init zeros()
-
-                loss_ts_ = np.sqrt(np.sum(entries_ts) / np.sum(entries_ts_count))
                 losses['test'].append(loss_ts_)
  
                 if loss_val_ < min_loss: # keep track of the best validation loss 
