@@ -10,6 +10,7 @@ import time
 from tqdm import tqdm
 from collections import OrderedDict
 import gc
+import glob
 
 LOG = sys.stdout
 
@@ -321,7 +322,8 @@ def main(opts, logfile=None, restore_point=None):
 
         best_log = "logs/best_" + opts.get("model_name", "TEST") + ".log"
         print("epoch,train,valid,test\n", file=open(best_log, "a"))
-        for ep in range(opts['epochs']):
+
+        for ep in range(opts.get('restore_point_epoch', 0), opts['epochs'] + opts.get('restore_point_epoch', 0)):
             begin = time.time()
             loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0.,0.,0.,0.
 
@@ -483,7 +485,7 @@ def main(opts, logfile=None, restore_point=None):
                                             min_ts_loss, min_val_ts), file=LOG)
                 gc.collect()
 
-            if opts.get("checkpoint_interval", 10000000) % (ep+1) == 0:
+            if (ep+1) % opts.get("checkpoint_interval", 10000000) == 0:
                 save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
                 print("Model saved in file: %s" % save_path, file=LOG)                                
 
@@ -527,7 +529,7 @@ if __name__ == "__main__":
         latent_features = 100
         learning_rate = 0.0005
         validate_interval = 10 # perform validation every validate_interval epochs
-        checkpoint_interval = 1
+        checkpoint_interval = 10
 
     if 'netflix/6m' in path:
         maxN = 1100
@@ -550,7 +552,7 @@ if __name__ == "__main__":
         checkpoint_interval = 1 
 
 
-    opts ={'epochs': 100000,#never-mind this. We have to implement look-ahead to report the best result.
+    opts ={'epochs': 10000,#never-mind this. We have to implement look-ahead to report the best result.
            'ckpt_folder':'checkpoints/factorized_ae',
            'model_name':'noatt_fac_ae',
            'ema_decay':0.9,
@@ -627,13 +629,24 @@ if __name__ == "__main__":
            'sample_mode':'conditional_sample_sparse' # by_row_column_density, uniform_over_dense_values, conditional_sample_sparse
            
     }
-    if auto_restore:
-        checkpoints = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt" % (opts.get('model_name', "test"))))
-        if len(checkpoints) > 0:
-            restore_point = checkpoints[-1]
-            print("Restoring from %s" % restore_point)
-        else:
-            restore_point = None
+    if auto_restore:        
+
+        ## glob doesn't find any files since they are named *.ckpt.meta, etc. So do it with string split
+        
+        # checkpoints = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt" % (opts.get('model_name', "test"))))
+        # if len(checkpoints) > 0:
+        #     restore_point = checkpoints[-1]
+        #     print("Restoring from %s" % restore_point)
+        # else:
+        #     restore_point = None
+
+        restore_point_epoch = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt*" % (opts.get('model_name', "test"))))[-1].split(".")[0].split("_")[-1]
+        restore_point = opts['ckpt_folder'] + "/%s_checkpt_ep_" % (opts.get('model_name', "test")) + restore_point_epoch + ".ckpt"
+        print("Restoring from %s" % restore_point)
+
+        opts["restore_point_epoch"] = int(restore_point_epoch) # Pass num_epochs so far to start counting from there. In case of another crash 
+
+
     else:
         restore_point = None
     main(opts, restore_point=restore_point)
