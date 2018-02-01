@@ -74,10 +74,12 @@ def get_ml100k(valid=0.1, rng=None, dense=False, fold=1):
     data = {'mat_values_all':mat_values_all,
             'mat_values_tr':mat_values_tr,
             'mat_values_val':mat_values_val,
+            'mat_values_tr_val':mat_values_tr_val,
             'mat_values_test':mat_values_test,
             'mask_indices_all':mask_indices_all,
             'mask_indices_tr':mask_indices_tr,
             'mask_indices_val':mask_indices_val,
+            'mask_indices_tr_val':mask_indices_tr_val,
             'mask_indices_test':mask_indices_test,                   
             'mat_shape':[n_users, n_movies, 1], 
             'mask_tr_val_split':tr_val_split}
@@ -220,24 +222,17 @@ def get_data(dataset='movielens-small',
         _, movies = np.unique(ratings.movie_id, return_inverse=True)
         n_movies = np.max(movies) + 1
 
+        n_ratings_val = int(n_ratings * valid)
+        n_ratings_ts = int(n_ratings * test)
+        n_ratings_tr = n_ratings - n_ratings_val - n_ratings_ts
 
+        split_tr_val = np.concatenate((np.zeros(n_ratings_tr, np.int32), np.ones(n_ratings_val, np.int32), 2 * np.ones(n_ratings_ts, np.int32)))
+        split_tr_val = rng.permutation(split_tr_val)
 
-        split = np.random.choice([0,1], size=n_ratings, p=(train + valid, test))
-
-        ratings_tr_val = ratings[split==0]
-        ratings_ts = ratings[split==1]
-
-        p_tr = train / (train + valid)
-        p_val = valid / (train + valid)
-        
-        split_tr_val = np.random.choice([0,1], size=(n_ratings - len(ratings_ts)), p=(p_tr, p_val))
-
-        ratings_tr = ratings_tr_val[split_tr_val==0]
-        ratings_val = ratings_tr_val[split_tr_val==1]
-
-        split_tr_val = np.concatenate((split_tr_val, 2 * np.ones(ratings_ts.shape[0], np.int32)))
-
-
+        ratings_tr_val = ratings[split_tr_val<=1]
+        ratings_tr = ratings[split_tr_val==0]
+        ratings_val = ratings[split_tr_val==1]
+        ratings_ts = ratings[split_tr_val==2]
 
         mat_values_all = np.array(ratings.rating)
         mat_values_tr_val = np.array(ratings_tr_val.rating)
@@ -311,22 +306,19 @@ def get_data(dataset='movielens-small',
 
         print("     loading", n_ratings, "ratings for", n_users, "users on", n_movies, "movies...")
 
-        split = np.random.choice([0,1], size=n_ratings, p=(train + valid, test))
+        n_ratings_val = int(n_ratings * valid)
+        n_ratings_ts = int(n_ratings * test)
+        n_ratings_tr = n_ratings - n_ratings_val - n_ratings_ts
 
-        ratings_tr_val = ratings[split==0]
-        ratings_ts = ratings[split==1]
-
-        p_tr = train / (train + valid)
-        p_val = valid / (train + valid)
-        
-        split_tr_val = np.random.choice([0,1], size=(n_ratings - len(ratings_ts)), p=(p_tr, p_val))        
+        split_tr_val = np.concatenate((np.zeros(n_ratings_tr, np.int32), np.ones(n_ratings_val, np.int32), 2 * np.ones(n_ratings_ts, np.int32)))
+        split_tr_val = rng.permutation(split_tr_val)
 
         print("     populating ratings arrays...")
 
-        ratings_tr = ratings_tr_val[split_tr_val==0]
-        ratings_val = ratings_tr_val[split_tr_val==1]
-
-        split_tr_val = np.concatenate((split_tr_val, 2 * np.ones(ratings_ts.shape[0], np.int32)))
+        ratings_tr_val = ratings[split_tr_val<=1]
+        ratings_tr = ratings[split_tr_val==0]
+        ratings_val = ratings[split_tr_val==1]
+        ratings_ts = ratings[split_tr_val==2]
 
         mat_values_all = np.array(ratings.rating)
         mat_values_tr_val = np.array(ratings_tr_val.rating)
