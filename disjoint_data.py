@@ -19,7 +19,7 @@ def get_subset(df, users, movies):
     return df.loc[np.logical_and(np.isin(df["user_id"], users), 
                                  np.isin(df["movie_id"], movies)), :]
 
-def get_n(df, n, rng=None):
+def get_n(df, n, rng=None, return_idx=False):
     '''
     Get random `n` ratings from a dataframe. 
     Returns: mask, ratings, remaining dataframe (after `n` ratings are removed)
@@ -30,7 +30,10 @@ def get_n(df, n, rng=None):
     idx = rng.permutation(np.arange(df.shape[0]))
     subset = df[idx[0:n], :]
     remainder = df[idx[n:], :]
-    return subset[:, 0:2], subset[:, 2], remainder
+    if not return_idx:
+        return subset[:, 0:2], subset[:, 2], remainder
+    else:
+        return subset[:, 0:2], subset[:, 2], remainder, (idx[0:n], idx[n:])
 
 def get_test(beta, n_train, ratings_obs_obs, ratings_obs_hid, ratings_hid_obs, ratings_hid_hid, rng=None):
     '''
@@ -48,16 +51,24 @@ def get_test(beta, n_train, ratings_obs_obs, ratings_obs_hid, ratings_hid_obs, r
     return test_mask, test_values, remainders
 
 
-def train_test_valid(df, train=0.8, test=0.2, valid=0., rng=None):
+def train_test_valid(df, train=0.8, test=0.2, valid=0., rng=None, return_idx=False):
     assert (train + test + valid) == 1.
-    test_mask, test_values, df = get_n(df, int(df.shape[0] * test),rng=rng)
+    if return_idx and valid > 0.:
+        raise NotImplementedError("Haven't implemented index returning for validation set")
+    if return_idx:
+        test_mask, test_values, df, idx = get_n(df, int(df.shape[0] * test),rng=rng)
+    else:
+        test_mask, test_values, df = get_n(df, int(df.shape[0] * test),rng=rng)
     if valid > 0.:
         valid_mask, valid_values, df = get_n(df, int(df.shape[0] * valid),rng=rng)
     train_mask, train_values = (df[:,0:2], df[:,2])
     if valid > 0.:
         return (train_mask, train_values), (valid_mask, valid_values), (test_mask, test_values)
     else:
-        return (train_mask, train_values), (test_mask, test_values)
+        if return_idx:
+            return (train_mask, train_values), (test_mask, test_values), (idx[1], idx[0])
+        else:
+            return (train_mask, train_values), (test_mask, test_values)
 
 def prep_data_dict(train, valid=None, test=None, n_users=None, n_movies=None):
     valid = valid if valid is not None else (np.zeros((0,2), dtype="int"), np.zeros((0), dtype="int"))

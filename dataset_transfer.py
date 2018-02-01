@@ -3,6 +3,7 @@ import numpy as np
 import h5py
 from sparse_factorized_autoencoder_disjoint import main as train_model_with_opts
 from sparse_factorized_autoencoder_disjoint import set_opts, one_hot
+from disjoint_data import train_test_valid
 
 def eval_dataset(fns, data, v=2):
     sess = fns["sess"]
@@ -195,13 +196,66 @@ def netflix():
     #                                    p_new=0.07, max_id_m=10000, max_id_u=17770)
     return {}, lambda x, y: 0.
 
+def compbio():
+    mat = pd.read_csv("./data/bio/nonRedun.mat", sep="\t", index_col=0)
+    mask = np.zeros((0, 2), "int")
+    values = np.zeros((0))
+    for i in xrange(mat.shape[1]):
+        col = mat.loc[:, mat.columns[i]]
+        idx = np.logical_not(col.isnull())
+        matrix = np.arange(mat.shape[0])
+        rows = matrix[idx]
+        mask = np.concatenate((mask, np.concatenate([rows[:, None], np.repeat([i], rows.shape[0])[:, None]], axis=1)), axis=0)
+        values = np.concatenate((values, col[idx]))
+    
+    idx = values < np.percentile(values, 99.95)
+    values = values[idx]
+    mask = mask[idx, :]
+    values_disc = np.zeros_like(values)
+    centers = np.zeros(5)
+    for i, p in enumerate([20, 40, 60, 80, 100]):
+        idx = np.logical_and(values_disc == 0, values <= np.percentile(values, p))
+        values_disc[idx] = i+1
+        centers[i] = (values[idx]).mean()
+    
+    (train_mask, train_values), (test_mask, test_values), idx = train_test_valid(np.concatenate([mask, values_disc], axis=1), 
+                                                                            train=0.8, test=0.2, valid=0., return_idx=True)
+    
+    split_pts = np.zeros_like(values, "int")
+    split_pts[idx[1]] = 2
+    data = {}
+    data["mask_indices_tr_val"] = mask
+    data["mat_values_tr_val"] = values_disc
+    data["mat_values_tr"] = train_values
+    data["mask_indices_tr"] = train_mask
+    data["mask_indices_test"] = test_mask
+    data["mask_tr_val_split"] = split_pts
+
+    def eval_compbio(fns, data, v=2):
+        '''
+        custom eval function to map the 1-5 scale to 1-100 for flixter.
+        '''
+        sess = fns["sess"]
+        val_dict = {fns["mat_values_tr"]:one_hot(data["mat_values_tr"]),
+                    fns["mask_indices_tr"]:data["mask_indices_tr"],
+                    fns["mat_values_val"]:one_hot(data["mat_values_tr_val"]),
+                    fns["mask_indices_val"]:data["mask_indices_test"],
+                    fns["mask_indices_tr_val"]:data["mask_indices_tr_val"],
+                    fns["mask_split"]:(data["mask_tr_val_split"] == v) * 1.
+                    }
+        out = sess.run([fns["out_val"]], val_dict)[0]
+        expval = (((softmax(out.reshape(-1,5))) * centers[None, :]).sum(axis=1))
+        mask = (split_pts == 2)
+        return np.sqrt(np.square(mask *(expval- M[np.where(M)])).sum() / (mask).sum())
+    return data, eval_compbio
+
 def main():
     print("Training")
     losses, fns = train_model_with_opts(set_opts(epochs=0))
     print("Training complete....")
     with open("results/tranfer_learning_results.log", "w") as save_file:
         print("model,rmse", file=save_file)
-    for name, dataset in {"douban":douban, "flixter":flixter, "yahoo":yahoo, "netflix":netflix}.iteritems():
+    for name, dataset in {"douban":douban, "flixter":flixter, "yahoo":yahoo, "netflix":netflix, "compbio":compbio}.iteritems():
         print(name)
         data, eval_fn = dataset()
         rmse = eval_fn(fns, data)
