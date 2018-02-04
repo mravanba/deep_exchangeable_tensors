@@ -8,6 +8,7 @@ import math
 import time
 from tqdm import tqdm
 from collections import OrderedDict
+import sys
 
 def one_hot(x):
     n = x.shape[0]
@@ -42,6 +43,45 @@ def sample_submatrix(mask_,#mask, used for getting concentrations
             else:
                 ind_m = np.random.choice(M, size=maxM, replace=False, p = pM)
             yield ind_n, ind_m 
+
+
+def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM): # AKA Kevin sampling 
+    N,M,_ = shape
+    num_vals = mask_indices.shape[0]
+
+    for n in range(N // maxN):
+        for m in range(M // maxM):
+
+            pN = np.bincount(mask_indices[:,0], minlength=N).astype(np.float32)
+            pN /= pN.sum()
+            ind_n = np.arange(N)[pN!=0] # If there are 0s in p and replace is False, we cant select N=maxN unique values. Filter out 0s.
+            pN = pN[pN!=0]
+            maxN = min(maxN, ind_n.shape[0])
+            ind_n = np.random.choice(ind_n, size=maxN, replace=False, p=pN)
+
+            select_row = np.in1d(mask_indices[:,0], ind_n)
+            rows = mask_indices[select_row==True]
+
+            pM = np.bincount(rows[:,1], minlength=M).astype(np.float32)
+            pM /= pM.sum()
+            ind_m = np.arange(M)[pM!=0] # If there are 0s in p and replace is False, we cant select M=maxM unique values. Filter out 0s.
+            pM = pM[pM!=0] 
+            maxM = min(maxM, ind_m.shape[0])
+            ind_m = np.random.choice(ind_m, size=maxM, replace=False, p=pM)
+
+            select_col = np.in1d(mask_indices[:,1], ind_m)
+            select_row_col = np.logical_and(select_row, select_col)
+
+            inds_all = np.arange(num_vals)[select_row_col==True]
+            
+            split = tr_val_split[inds_all]
+            
+            inds_tr = inds_all[split==0]
+            inds_val = inds_all[split==1]
+            inds_tr_val = inds_all[split<=1]
+            inds_ts = inds_all[split==2]
+
+            yield inds_tr, inds_val, inds_tr_val, inds_ts, inds_all
 
 
 def sample_dense_values_uniform(mask_indices, minibatch_size, iters_per_epoch):
@@ -94,10 +134,17 @@ def ordinal_hinge_loss_fn_sp(mat_values, rec_values, noise_mask, alpha, num_valu
     out_u = out * no_noise_mask
     return alpha * tf.reduce_sum(out_c) + (1-alpha) * tf.reduce_sum(out_u) 
 
-def main(opts):        
+def main(opts, logfile=None, restore_point=None):
+    if logfile is not None:
+        LOG = open(logfile, "w", 0)
+    else:
+        LOG = sys.stdout
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8) 
     path = opts['data_path']
-    data = get_data(path, train=.8, valid=.1, test=.1, fold=1)
+    if 'movielens-100k' in path:
+        data = get_data(path, train=.75, valid=.05, test=.2, mode='sparse', fold=1) # ml-100k uses official test set so only the valid paramter matters
+    else: 
+        data = get_data(path, train=.6, valid=.2, test=.2, mode='sparse', fold=1)
     
     #build encoder and decoder and use VAE loss
     N, M, num_features = data['mat_shape']
@@ -149,8 +196,8 @@ def main(opts):
                 
                 out_val = network.get_output(val_dict, reuse=True, verbose=0, is_training=False)['input']#get network output, reusing the neural net
             
-            minibatch_size = np.minimum(opts['minibatch_size'], data['mask_indices_tr'].shape[0])
-            iters_per_epoch = data['mask_indices_tr'].shape[0] // minibatch_size
+
+            iters_per_epoch = math.ceil(N//maxN) * math.ceil(M//maxM)
 
             #loss and training
             rec_loss = dae_loss_fn_sp(mat_values_tr, out_tr, noise_mask_tr, opts['dae_loss_alpha'])
@@ -168,18 +215,29 @@ def main(opts):
             sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True))
             sess.run(tf.global_variables_initializer())
             
-            min_loss = 5
+            min_loss = 5.
+            min_train = 5.
             min_loss_epoch = 0
             losses = OrderedDict()
             losses["train"] = []
             losses["valid"] = []
+            losses["test"] = []
+            min_ts_loss = 5.
+            min_val_ts = 5.
 
             noise_rate = opts['dae_noise_rate']
+
+            saver = tf.train.Saver()
+            if restore_point is not None:
+                saver.restore(sess, restore_point)
+
+            best_log = "logs/best_" + opts.get("model_name", "TEST") + ".log"
+            print("epoch,train,valid,test\n", file=open(best_log, "a"))
             
-            for ep in range(opts['epochs']):
+            for ep in range(opts.get('restore_point_epoch', 0), opts['epochs'] + opts.get('restore_point_epoch', 0)):
                 begin = time.time()
-                loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0,0,0,0                 
-                for sample_ in sample_dense_values_uniform(data['mask_indices_tr'], minibatch_size, iters_per_epoch):
+                loss_tr_, rec_loss_tr_, loss_val_, loss_ts_ = 0.,0.,0.,0.                 
+                for _, _, _, _, sample_ in tqdm(conditional_sample_sparse(data['mask_indices_tr'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
 
                     mat_values = one_hot(data['mat_values_tr'][sample_])
                     mask_indices = data['mask_indices_tr'][sample_]
@@ -191,7 +249,8 @@ def main(opts):
                     tr_dict = {mat_values_tr:mat_values,
                                 mat_values_tr_noisy:mat_values_noisy,
                                 mask_indices_tr:mask_indices,
-                                noise_mask_tr:noise_mask}
+                                noise_mask_tr:noise_mask
+                                }
 
                     _, bloss_, brec_loss_ = sess.run([train_step, total_loss, rec_loss], feed_dict=tr_dict)
 
@@ -202,53 +261,134 @@ def main(opts):
                 rec_loss_tr_ /= iters_per_epoch
                 losses['train'].append(loss_tr_)
 
-                ## Validation Loss
-                for sample_ in sample_dense_values_uniform(data['mask_indices_tr_val'], minibatch_size, iters_per_epoch):
-                    mat_values = one_hot(data['mat_values_tr_val'][sample_]).reshape((-1, 5))
-                    mask_indices = data['mask_indices_tr_val'][sample_]
+                print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f})".format(ep+1, time.time() - begin, loss_tr_, rec_loss_tr_))            
 
-                    noise_mask = data['mask_tr_val_split'][sample_] # 1's for validation entries 
-                    no_noise_mask = np.ones_like(noise_mask) - noise_mask
-                    mat_values_noisy = (mat_values * no_noise_mask[:, None]).flatten()
+                if (ep+1) % opts.get("checkpoint_interval", 10000000) == 0:
+                    save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_checkpt_ep_%05d.ckpt" % (opts.get('model_name', "test"), ep + 1))
+                    print("Model saved in file: %s" % save_path, file=LOG)      
+                    
+                if (ep+1) % opts['validate_interval'] == 0:
 
-                    val_dict = {mat_values_val:mat_values.flatten(),
-                                mat_values_val_noisy:mat_values_noisy,
-                                mask_indices_val:mask_indices,
-                                noise_mask_val:noise_mask}
+                    print("Validating: ")   
+                    entries_val = np.zeros(data['mask_indices_tr_val'].shape[0])
+                    entries_val_count = np.zeros(data['mask_indices_tr_val'].shape[0])
+                    entries_tr_val_count = np.zeros(data['mask_indices_tr_val'].shape[0])
+                    num_entries_tr_val = data['mask_indices_tr_val'].shape[0]
 
-                    bloss_, = sess.run([rec_loss_val], feed_dict=val_dict)
+                    while np.sum(entries_tr_val_count) < .95 * num_entries_tr_val:
+                        for _, sample_val_, _, _, sample_ in tqdm(conditional_sample_sparse(data['mask_indices_tr_val'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
+                            
+                            mat_values = one_hot(data['mat_values_tr_val'][sample_]).reshape((-1, 5))
+                            mask_indices = data['mask_indices_tr_val'][sample_]
 
-                    loss_val_ += np.sqrt(bloss_)
+                            noise_mask = data['mask_tr_val_split'][sample_] # 1's for validation entries 
+                            no_noise_mask = np.ones_like(noise_mask) - noise_mask
+                            mat_values_noisy = (mat_values * no_noise_mask[:, None]).flatten()
+
+                            val_dict = {mat_values_val:mat_values.flatten(),
+                                        mat_values_val_noisy:mat_values_noisy,
+                                        mask_indices_val:mask_indices,
+                                        noise_mask_val:noise_mask
+                                        }
+
+                            bloss_, beout_val = sess.run([rec_loss_val, ev], feed_dict=val_dict)
+
+                            losses_val = (data['mat_values_tr_val'][sample_val_] - beout_val[noise_mask == 1.])**2
+                            entries_val[sample_val_] = losses_val
+                            entries_val_count[sample_val_] = 1
+                            entries_tr_val_count[sample_] = 1
+
+                    loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
+
+                    losses['valid'].append(loss_val_)
 
 
-                loss_val_ /= iters_per_epoch
-                losses['valid'].append(loss_val_)
+                    print("Testing: ")
+                    entries_ts = np.zeros(data['mask_indices_all'].shape[0])
+                    entries_ts_count = np.zeros(data['mask_indices_all'].shape[0])
+                    entries_count = np.zeros(data['mask_indices_all'].shape[0])
+                    num_entries = data['mask_indices_all'].shape[0]
+
+                    while np.sum(entries_count) < .95 * num_entries:
+                        for _, _, sample_tr_val_, sample_ts_, sample_ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
+
+                            mat_values = one_hot(data['mat_values_all'][sample_]).reshape((-1, 5))
+                            mask_indices = data['mask_indices_all'][sample_]
+
+                            noise_mask = (data['mask_tr_val_split'][sample_] == 2) * 1. # 1's for test entries 
+                            no_noise_mask = np.ones_like(noise_mask) - noise_mask
+                            mat_values_noisy = (mat_values * no_noise_mask[:, None]).flatten()
+
+                            test_dict = {mat_values_val:mat_values.flatten(),
+                                        mat_values_val_noisy:mat_values_noisy,
+                                        mask_indices_val:mask_indices,
+                                        noise_mask_val:noise_mask
+                                        }
+
+                            bloss_, beout_ts = sess.run([rec_loss_val, ev], feed_dict=test_dict)                                                    
+
+                            losses_ts = ((data['mat_values_all'][sample_] - beout_ts)**2)[noise_mask==1.]
+
+                            entries_ts[sample_ts_] = losses_ts
+                            entries_ts_count[sample_ts_] = 1
+                            entries_count[sample_] = 1
+
+                    loss_ts_ = np.sqrt(np.sum(entries_ts) / np.sum(entries_ts_count))
+                    losses['test'].append(loss_ts_)
+
+                    
+                    if loss_val_ < min_loss: # keep track of the best validation loss 
+                        min_loss = loss_val_
+                        min_loss_epoch = ep+1
+                        min_train = rec_loss_tr_
+                        min_test = loss_ts_
+                        print("{:d},{:4},{:4},{:4}\n".format(ep, loss_tr_, loss_val_, loss_ts_), file=open(best_log, "a"))
+                        if opts.get("save_best", False): 
+                            save_path = saver.save(sess, opts['ckpt_folder'] + "/%s_best.ckpt" % opts.get('model_name', "test"))
+                            print("Model saved in file: %s" % save_path, file=LOG)
                 
-                if loss_val_ < min_loss: # keep track of the best validation loss 
-                    min_loss = loss_val_
-                    min_loss_epoch = ep
+                    if loss_ts_ < min_ts_loss: # keep track of the best test loss 
+                        min_ts_loss = loss_ts_
+                        min_val_ts = loss_val_     
                 
-                print("epoch {:d} took {:.1f} training loss {:.3f} (rec:{:.3f}) \t validation: {:.3f} \t minimum validation loss: {:.3f} at epoch: {:d} \t test loss: {:.3f}".format(ep, time.time() - begin, loss_tr_, rec_loss_tr_, loss_val_, min_loss, min_loss_epoch, loss_ts_))            
+                    print("Validation: epoch {:d} took {:.1f} train loss {:.3f} (rec:{:.3f}); valid: {:.3f}; min valid loss: {:.3f} (train: {:.3}, test: {:.3}) at epoch: {:d}; test loss: {:.3f} (best test: {:.3f} with val {:.3f})"
+                                    .format(ep+1, 
+                                            time.time() - begin, 
+                                            loss_tr_, 
+                                            rec_loss_tr_, 
+                                            loss_val_, 
+                                            min_loss, 
+                                            min_train, 
+                                            min_test, 
+                                            min_loss_epoch, 
+                                            loss_ts_,
+                                            min_ts_loss, 
+                                            min_val_ts), 
+                                    file=LOG)
     return losses    
 
 if __name__ == "__main__":
 
+    auto_restore = False
+
     # path = 'movielens-TEST'
-    path = 'movielens-100k'
-    # path = 'movielens-1M'
+    # path = 'movielens-100k'
+    path = 'movielens-1M'
     # path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 10000
-        maxM = 10000
+        maxN = 300
+        maxM = 300
         minibatch_size = 2000000
         skip_connections = False
         units = 128
         learning_rate = 0.005
-        dae_noise_rate = .9 # drop out this proportion of input values 
+        dae_noise_rate = .5 # drop out this proportion of input values 
         dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
+        validate_interval = 5
+        checkpoint_interval = 5
 
 
     ## 1M Configs
@@ -258,10 +398,12 @@ if __name__ == "__main__":
         minibatch_size = 2000000
         skip_connections = False
         units = 200
-        learning_rate = 0.001
-        dae_noise_rate = .3 # drop out this proportion of input values 
+        learning_rate = 0.005
+        dae_noise_rate = .5 # drop out this proportion of input values 
         dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
+        validate_interval = 10
+        checkpoint_interval = 10
 
     if 'netflix/6m' in path:
         maxN = 300
@@ -273,6 +415,8 @@ if __name__ == "__main__":
         dae_noise_rate = .1 # drop out this proportion of input values 
         dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
+        validate_interval = 5
+        checkpoint_interval = 1
 
     if 'netflix/full' in path:
         maxN = 300
@@ -284,11 +428,13 @@ if __name__ == "__main__":
         dae_noise_rate = .1 # drop out this proportion of input values 
         dae_loss_alpha = .7  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
+        validate_interval = 5
+        checkpoint_interval = 1
 
 
     opts ={'epochs': 10000,#never-mind this. We have to implement look-ahead to report the best result.
-           'ckpt_folder':'checkpoints/factorized_ae',
-           'model_name':'test_fac_ae',
+           'ckpt_folder':'checkpoints/self_supervised',
+           'model_name':'ss_ae',
            'verbose':2,
            # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            # 'maxM':1682,#num movies per submatrix
@@ -299,6 +445,9 @@ if __name__ == "__main__":
            'save':False,
            'data_path':path,
            'output_file':'output',
+           'validate_interval':validate_interval,
+           'checkpoint_interval':checkpoint_interval,
+           'save_best':True,
            'network':[
                {'type':'matrix_sparse', 'units':units},
                {'type':'channel_dropout_sparse'},
@@ -344,7 +493,18 @@ if __name__ == "__main__":
            'dae_loss_alpha':dae_loss_alpha,
            'l2_regularization':l2_regularization,
     }
-    
-    main(opts)
+    if auto_restore:        
+
+        restore_point_epoch = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt*" % (opts.get('model_name', "test"))))[-1].split(".")[0].split("_")[-1]
+        restore_point = opts['ckpt_folder'] + "/%s_checkpt_ep_" % (opts.get('model_name', "test")) + restore_point_epoch + ".ckpt"
+        print("Restoring from %s" % restore_point)
+
+        opts["restore_point_epoch"] = int(restore_point_epoch) # Pass num_epochs so far to start counting from there. In case of another crash 
+
+
+    else:
+        restore_point = None
+    main(opts, restore_point=restore_point)
+
 
 
