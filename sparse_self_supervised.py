@@ -91,6 +91,33 @@ def conditional_validation(tf_dict, mat_values_both, mask_indices_both_, mask_tr
 
     return np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
 
+def neighbourhood_validation(tf_dic, mask_indices_all, mask_indices_tr, mat_values_all, mask_split, sp_mat, split_id=1, hops=2, n_samp=1000):
+    mask_idx_val = mask_indices_all[mask_split==split_id]
+    mask_idx_train = mask_indices_tr
+    mat_values_val_ = mat_values_all[mask_split==split_id]
+    idxes = np.random.permutation(np.arange(mat_values_val_.shape[0]))
+    iters_per_val = max(1, mat_values_val_.shape[0] / minibatch_size)
+    pred_values = np.zeros_like(mat_values_val_)
+    for seed_set_id in tqdm(np.array_split(idxes, iters_per_val), total=iters_per_val):
+        seed_set = mask_idx_val[seed_set_id]
+        neighbours = sample_k_neighbours(seed_set, mask_idx_train, hops, n_samp)
+        mask_indices_ = np.concatenate([seed_set, neighbours], axis=0)
+        mat_values_ = np.array(sp_mat[mask_indices_[:,0], mask_indices_[:,1]]).flatten()
+        mat_values_ = one_hot(mat_values_)
+
+        noise_mask = np.concatenate([np.ones(seed_set.shape[0]), np.zeros(neighbours.shape[0])]) # only evaluate the seed set
+        no_noise_mask = np.ones_like(noise_mask) - noise_mask
+        mat_values_noisy = (mat_values_.reshape((-1,5)) * no_noise_mask[:, None]).flatten()
+
+        test_dict = {tf_dic["mat_values_val"]:mat_values_.flatten(),
+                     tf_dic["mat_values_val_noisy"]:mat_values_noisy,
+                     tf_dic["mask_indices_val"]:mask_indices_,
+                     tf_dic["noise_mask_val"]:noise_mask
+                    }
+        ev, = tf_dic["sess"].run([tf_dic["ev"]], feed_dict=test_dict)
+        pred_values[seed_set_id] = ev[noise_mask==1.]
+    return np.sqrt(np.mean(np.square(mat_values_val_ - pred_values)))
+
 def ce_loss(mat_values, rec_values):
     out = tf.reshape(rec_values, shape=[-1,5])
     mat_values = tf.reshape(mat_values, shape=[-1,5])
@@ -342,30 +369,13 @@ def main(opts, logfile=None, restore_point=None):
                                                         data['mask_tr_val_split'], split_id=2, draw_sample=draw_sample_val, 
                                                         iters_per_epoch=iters_per_epoch)
                     elif 'neighbourhood' in sample_mode:
-
-                        mask_idx_val = data['mask_indices_all'][data['mask_tr_val_split']==1]
-                        mask_idx_train = data['mask_indices_tr']
-                        mat_values_val_ = data['mat_values_all'][data['mask_tr_val_split']==1]
-                        idxes = np.random.permutation(np.arange(mat_values_val_.shape[0]))
-                        iters_per_val = max(1, mat_values_val_.shape[0] / minibatch_size)
-                        for seed_set_id in tqdm(np.array_split(idxes, iters_per_val), total=iters_per_val):
-                            seed_set = mask_idx_val[seed_set_id]
-                            neighbours = sample_k_neighbours(seed_set, mask_idx_train, hops, n_samp)
-                            mask_indices_ = np.concatenate([seed_set, neighbours], axis=0)
-                            mat_values_ = np.array(sp_mat[mask_indices_[:,0], mask_indices_[:,1]]).flatten()
-                            mat_values_ = one_hot(mat_values_)
-
-                            noise_mask = np.concatenate([np.ones(seed_set.shape[0]), np.zeros(neighbours.shape[0])]) # only evaluate the seed set
-                            no_noise_mask = np.ones_like(noise_mask) - noise_mask
-                            mat_values_noisy = (mat_values_.reshape((-1,5)) * no_noise_mask[:, None]).flatten()
-
-                            test_dict = {mat_values_val:mat_values_.flatten(),
-                                        mat_values_val_noisy:mat_values_noisy,
-                                        mask_indices_val:mask_indices_,
-                                        noise_mask_val:noise_mask
-                                        }
-                            bloss_val_, = sess.run([rec_loss_val], feed_dict=test_dict)
-                            loss_val_ = np.sqrt(bloss_val_)
+                        loss_val_ = neighbourhood_validation(tf_dict, data['mask_indices_all'], data['mask_indices_tr'], data['mat_values_all'], 
+                                                             data['mask_tr_val_split'], sp_mat=sp_mat, split_id=1, hops=hops, n_samp=n_samp)
+                        
+                        loss_ts_ = neighbourhood_validation(tf_dict, data['mask_indices_all'], np.concatenate([data['mask_indices_tr'],
+                                                                                                               data['mask_indices_val']], axis=0),
+                                                             data['mat_values_all'], 
+                                                             data['mask_tr_val_split'], sp_mat=sp_mat, split_id=2, hops=hops, n_samp=n_samp)
 
                     losses['valid'].append(loss_val_)
                     losses['test'].append(loss_ts_)
@@ -428,7 +438,7 @@ if __name__ == "__main__":
     if 'movielens-1M' in path:
         maxN = 800
         maxM = 800
-        minibatch_size = 10000
+        minibatch_size = 50000
         skip_connections = True
         units = 256
         learning_rate = 0.0005
@@ -525,8 +535,8 @@ if __name__ == "__main__":
             },
            'lr':learning_rate,
            'sample_mode': 'neighbourhood', # conditional_sample_sparse, by_row_column_density, uniform_over_dense_values
-           'n_hops':6,
-           'n_neighbours':10000,
+           'n_hops':3,
+           'n_neighbours':1000,
            'dae_noise_rate':dae_noise_rate,
            'dae_loss_alpha':dae_loss_alpha,
            'l2_regularization':l2_regularization,
