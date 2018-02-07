@@ -20,21 +20,45 @@ def sample_dense_values_uniform_val(mask_indices, mask_tr_val_split, minibatch_s
         sample_tr = np.random.choice(num_vals_tr, size=minibatch_size, replace=False)
         yield sample_tr, mask_tr_val_split[sample_tr]
 
-def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM, valid=False): # AKA Kevin sampling 
+def prep_conditional_sample_sparse(mask_indices, shape):
+    N,M,_ = shape
+    _, row_inds, row_counts = np.unique(mask_indices[:,0], return_index=True, return_counts=True)
+    _, col_inds, col_counts = np.unique(mask_indices[:,1], return_index=True, return_counts=True)
+
+    pN = np.bincount(mask_indices[:,0], minlength=N).astype(np.float32)
+    pN /= pN.sum()
+
+    out_dict = {}
+    out_dict['row_inds'] = row_inds
+    out_dict['row_counts'] = row_counts
+    out_dict['col_inds'] = col_inds
+    out_dict['col_counts'] = col_counts
+    out_dict['pN'] = pN
+
+    return out_dict
+
+
+def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM, sample_dict, valid=False): # AKA Kevin sampling 
     N,M,_ = shape
     num_vals = mask_indices.shape[0]
+
+    row_inds = sample_dict['row_inds']
+    row_counts = sample_dict['row_counts']
+    # col_inds = sample_dict['col_inds']
+    # col_counts = sample_dict['col_counts']
+    pN = sample_dict['pN']
+
+    temp_n = np.arange(N)[pN!=0] # If there are 0s in pN and replace is False, we cant select N=maxN unique values. Filter out 0s.
+    pN = pN[pN!=0]
+    maxN = min(maxN, temp_n.shape[0])
 
     for n in range(N // maxN):
         for m in range(M // maxM):
 
-            pN = np.bincount(mask_indices[:,0], minlength=N).astype(np.float32)
-            pN /= pN.sum()
-            ind_n = np.arange(N)[pN!=0] # If there are 0s in p and replace is False, we cant select N=maxN unique values. Filter out 0s.
-            pN = pN[pN!=0]
-            maxN = min(maxN, ind_n.shape[0])
-            ind_n = np.random.choice(ind_n, size=maxN, replace=False, p=pN)
-
-            select_row = np.in1d(mask_indices[:,0], ind_n)
+            ind_n = np.random.choice(temp_n, size=maxN, replace=False, p=pN)
+            select_row = np.zeros(num_vals)
+            for i in ind_n:
+                select_row[row_inds[i]:(row_inds[i]+row_counts[i])] = 1
             rows = mask_indices[select_row==True]
 
             pM = np.bincount(rows[:,1], minlength=M).astype(np.float32)
@@ -51,23 +75,25 @@ def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM, val
             
             split = tr_val_split[inds_all]
             
-            inds_tr = inds_all[split==0]
-            inds_val = inds_all[split==1]
-            inds_tr_val = inds_all[split<=1]
-            inds_ts = inds_all[split==2]
+            # inds_tr = inds_all[split==0]
+            # inds_val = inds_all[split==1]
+            # inds_tr_val = inds_all[split<=1]
+            # inds_ts = inds_all[split==2]
             if valid:
                 yield inds_all, split
             else:
                 yield inds_all
 
-def conditional_validation(tf_dict, mat_values_both, mask_indices_both_, mask_tr_val_split_, split_id, draw_sample, iters_per_epoch):
+def conditional_validation(tf_dict, mat_values_both, mask_indices_both_, mask_tr_val_split_, split_id, draw_sample, iters_per_epoch, shape):
     entries_val = np.zeros(mask_indices_both_.shape[0])
     entries_val_count = np.zeros(mask_indices_both_.shape[0])
     entries_tr_val_count = np.zeros(mask_indices_both_.shape[0])
     num_entries_tr_val = mask_indices_both_.shape[0]
 
+    sample_dict = prep_conditional_sample_sparse(mask_indices_both_, shape)
+
     while np.sum(entries_tr_val_count) < .95 * num_entries_tr_val:
-        for sample_, split  in tqdm(draw_sample(mask_indices_both_, mask_tr_val_split_), 
+        for sample_, split  in tqdm(draw_sample(mask_indices_both_, mask_tr_val_split_, sample_dict), 
                                                     total=iters_per_epoch):
             mat_values = one_hot(mat_values_both[sample_]).reshape((-1, 5))
             mask_indices = mask_indices_both_[sample_]
@@ -282,13 +308,15 @@ def main(opts, logfile=None, restore_point=None):
                     if 'conditional_sample_sparse' in sample_mode:
                         # set up helper for drawing sample with common interface so we can reuse code between 
                         # 'conditional_sample_sparse' and 'uniform_over_dense_values'
-                        draw_sample = lambda mask, split: conditional_sample_sparse(mask, split, [N,M,1], maxN, maxM)
-                        draw_sample_val = lambda mask, split: conditional_sample_sparse(mask, split, [N,M,1], maxN, maxM, valid=True)
+                        draw_sample = lambda mask, split, sample_dict: conditional_sample_sparse(mask, split, [N,M,1], maxN, maxM, sample_dict)
+                        draw_sample_val = lambda mask, split, sample_dict: conditional_sample_sparse(mask, split, [N,M,1], maxN, maxM, sample_dict, valid=True)
                     else:
-                        draw_sample = lambda mask, split: sample_dense_values_uniform(mask, minibatch_size, iters_per_epoch)
-                        draw_sample_val = lambda mask, split: sample_dense_values_uniform_val(mask, split, minibatch_size, iters_per_epoch)
+                        draw_sample = lambda mask, split, sample_dict: sample_dense_values_uniform(mask, minibatch_size, iters_per_epoch)
+                        draw_sample_val = lambda mask, split, sample_dict: sample_dense_values_uniform_val(mask, split, minibatch_size, iters_per_epoch)
                     
-                    for sample_ in tqdm(draw_sample(data['mask_indices_tr'], data['mask_tr_val_split']), total=iters_per_epoch):
+                    sample_dict = prep_conditional_sample_sparse(data['mask_indices_tr'], [N,M,1])
+
+                    for sample_ in tqdm(draw_sample(data['mask_indices_tr'], data['mask_tr_val_split'], sample_dict), total=iters_per_epoch):
                         mat_values = one_hot(data['mat_values_tr'][sample_])
                         mask_indices = data['mask_indices_tr'][sample_]
 
@@ -357,17 +385,17 @@ def main(opts, logfile=None, restore_point=None):
                     if 'conditional_sample_sparse' in sample_mode:
                         loss_val_ = conditional_validation(tf_dict, data['mat_values_tr_val'], data['mask_indices_tr_val'], 
                                                         data['mask_tr_val_split'], split_id=1, draw_sample=draw_sample_val, 
-                                                        iters_per_epoch=iters_per_epoch)
+                                                        iters_per_epoch=iters_per_epoch, shape=[N,M,1])
                         loss_ts_ = conditional_validation(tf_dict, data['mat_values_all'], data['mask_indices_all'], 
                                                         data['mask_tr_val_split'], split_id=2, draw_sample=draw_sample_val, 
-                                                        iters_per_epoch=iters_per_epoch)
+                                                        iters_per_epoch=iters_per_epoch, shape=[N,M,1])
                     elif 'uniform_over_dense_values' in sample_mode:
                         loss_val_ = conditional_validation(tf_dict, data['mat_values_tr_val'], data['mask_indices_tr_val'], 
-                                                        data['mask_tr_val_split'], split_id=1, draw_sample=draw_sample_val, 
-                                                        iters_per_epoch=iters_per_epoch)
+                                                        data['mask_tr_val_split'], split_id=1, draw_sample=draw_sample_val,
+                                                        iters_per_epoch=iters_per_epoch, shape=[N,M,1])
                         loss_ts_ = conditional_validation(tf_dict, data['mat_values_all'], data['mask_indices_all'], 
                                                         data['mask_tr_val_split'], split_id=2, draw_sample=draw_sample_val, 
-                                                        iters_per_epoch=iters_per_epoch)
+                                                        iters_per_epoch=iters_per_epoch, shape=[N,M,1])
                     elif 'neighbourhood' in sample_mode:
                         loss_val_ = neighbourhood_validation(tf_dict, data['mask_indices_all'], data['mask_indices_tr'], data['mat_values_all'], 
                                                              data['mask_tr_val_split'], sp_mat=sp_mat, split_id=1, hops=hops, n_samp=n_samp)
@@ -415,23 +443,23 @@ if __name__ == "__main__":
     auto_restore = False
 
     # path = 'movielens-TEST'
-    # path = 'movielens-100k'
-    path = 'movielens-1M'
+    path = 'movielens-100k'
+    # path = 'movielens-1M'
     # path = 'netflix/6m'
 
     ## 100k Configs
     if 'movielens-100k' in path:
-        maxN = 300
-        maxM = 300
+        maxN = 30000
+        maxM = 30000
         minibatch_size = 2000000
-        skip_connections = False
-        units = 12
-        learning_rate = 0.005
-        dae_noise_rate = .1 # drop out this proportion of input values 
+        skip_connections = True
+        units = 256
+        learning_rate = 0.0005
+        dae_noise_rate = .15 # drop out this proportion of input values 
         dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
-        validate_interval = 5
-        checkpoint_interval = 5
+        validate_interval = 20
+        checkpoint_interval = 20
 
 
     ## 1M Configs
@@ -534,7 +562,7 @@ if __name__ == "__main__":
                 
             },
            'lr':learning_rate,
-           'sample_mode': 'neighbourhood', # conditional_sample_sparse, by_row_column_density, uniform_over_dense_values
+           'sample_mode': 'conditional_sample_sparse', # conditional_sample_sparse, by_row_column_density, uniform_over_dense_values
            'n_hops':3,
            'n_neighbours':1000,
            'dae_noise_rate':dae_noise_rate,
