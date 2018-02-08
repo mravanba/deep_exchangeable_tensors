@@ -107,6 +107,8 @@ def get_data(dataset='movielens-small',
                  test=.1,
                  valid=.1,
                  seed=1234,
+                 save_data=False,
+                 load_data=False,
                  **kwargs
                  ):
     rng = np.random.RandomState(seed)
@@ -210,6 +212,12 @@ def get_data(dataset='movielens-small',
         return get_ml100k(valid, rng, mode=="dense", kwargs.get("fold", 1))
 
     elif 'movielens-1M' in dataset:
+        if load_data:
+            if os.path.exists("data/ml1M.npz"):
+                print("loading saved data")
+                data = np.load("data/ml1M.npz")
+                print("data loaded")
+                return data
         r_cols = ['user_id', None, 'movie_id', None, 'rating', None, 'unix_timestamp']
         path = os.path.join(data_folder, 'ml-1m/ratings.dat')
 
@@ -267,6 +275,9 @@ def get_data(dataset='movielens-small',
                 'mat_shape':[n_users, n_movies, 1], 
                 'mask_tr_val_split':split_tr_val
                 }
+        if save_data:
+            print("Saving data")
+            np.savez_compressed("data/ml1M.npz", **data)
 
         if mode=='dense':
             mat_tr_val = sparse_array_to_dense(mat_values_tr_val, mask_indices_tr_val, [n_users_tr_val, n_movies_tr_val, 1])
@@ -286,8 +297,84 @@ def get_data(dataset='movielens-small',
 
         return data
 
-    elif 'netflix' in dataset:
+    elif 'movielens-10M' in dataset:
+        if load_data:
+            if os.path.exists("data/ml10M.npz"):
+                print("loading saved data")
+                data = np.load("data/ml10M.npz")
+                print("data loaded")
+                return data
+        r_cols = ['user_id', None, 'movie_id', None, 'rating', None, 'unix_timestamp']
+        path = os.path.join(data_folder, 'ml_10m/ratings.dat')
+        print("Loading ML 10M")
+        ratings = pd.read_csv(path, sep=':', names=r_cols, encoding='latin-1')
+        r_cols = ['user_id', 'movie_id', 'rating', 'unix_timestamp']
+        print("Ratings loaded with shape ", ratings.shape)
 
+        n_ratings = ratings.rating.shape[0]
+        n_users = np.max(ratings.user_id)
+
+        _, movies = np.unique(ratings.movie_id, return_inverse=True)
+        n_movies = np.max(movies) + 1
+
+        n_ratings_val = int(n_ratings * valid)
+        n_ratings_ts = int(n_ratings * test)
+        n_ratings_tr = n_ratings - n_ratings_val - n_ratings_ts
+
+        split_tr_val = np.concatenate((np.zeros(n_ratings_tr, np.int32), np.ones(n_ratings_val, np.int32), 2 * np.ones(n_ratings_ts, np.int32)))
+        split_tr_val = rng.permutation(split_tr_val)
+
+        ratings_tr_val = ratings[split_tr_val<=1]
+        ratings_tr = ratings[split_tr_val==0]
+        ratings_val = ratings[split_tr_val==1]
+        ratings_ts = ratings[split_tr_val==2]
+
+        mat_values_all = np.array(ratings.rating)
+        mat_values_tr_val = np.array(ratings_tr_val.rating)
+        mat_values_tr = np.array(ratings_tr.rating)
+        mat_values_val = np.array(ratings_val.rating)
+        mat_values_ts = np.array(ratings_ts.rating)
+
+        _, movies_tr = np.unique(ratings_tr.movie_id, return_inverse=True)
+        _, movies_val = np.unique(ratings_val.movie_id, return_inverse=True)
+        _, movies_ts = np.unique(ratings_ts.movie_id, return_inverse=True)
+        _, movies_tr_val = np.unique(ratings_tr_val.movie_id, return_inverse=True)
+
+        mask_indices_all = np.array(list(zip(ratings.user_id-1, movies)))
+        mask_indices_tr_val = np.array(list(zip(ratings_tr_val.user_id-1, movies_tr_val)))
+        mask_indices_tr = np.array(list(zip(ratings_tr.user_id-1, movies_tr)))
+        mask_indices_val = np.array(list(zip(ratings_val.user_id-1, movies_val)))
+        mask_indices_ts = np.array(list(zip(ratings_ts.user_id-1, movies_ts)))
+
+        n_users_tr_val = np.max(mask_indices_tr_val[:,0]) + 1
+        n_movies_tr_val = np.max(mask_indices_tr_val[:,1]) + 1
+
+        data = {'mat_values_all':mat_values_all,
+                'mask_indices_all':mask_indices_all,
+                'mat_values_tr_val':mat_values_tr_val,
+                'mask_indices_tr_val':mask_indices_tr_val,
+                'mat_values_tr':mat_values_tr,
+                'mask_indices_tr':mask_indices_tr,
+                'mat_values_val':mat_values_val,                        
+                'mask_indices_val':mask_indices_val, 
+                'mat_values_test':mat_values_ts,
+                'mask_indices_test':mask_indices_ts,
+                'mat_shape':[n_users, n_movies, 1], 
+                'mask_tr_val_split':split_tr_val
+                }
+        if save_data:
+            print("Saving data")
+            np.savez_compressed("data/ml10M.npz", **data)
+            print("Done")
+        return data
+
+    elif 'netflix' in dataset:
+        if load_data:
+            if os.path.exists("data/netflix.npz"):
+                print("loading saved data")
+                data = np.load("data/netflix.npz")
+                print("data loaded")
+                return data
         print("--> loading ", dataset, " data")
 
         r_cols = ['user_id', 'movie_id', 'rating', 'date']
@@ -347,10 +434,12 @@ def get_data(dataset='movielens-small',
                 'mask_indices_tr':mask_indices_tr,
                 'mat_values_val':mat_values_val,                        
                 'mask_indices_val':mask_indices_val, 
+                'mat_values_test':mat_values_ts,                        
+                'mask_indices_test':mask_indices_ts, 
                 'mat_shape':[n_users, n_movies, 1], 
                 'mask_tr_val_split':split_tr_val}
-
-
+        if save_data:
+            np.savez_compressed("data/netflix.npz", **data)
         # pdb.set_trace()
 
         print("--> netflix data loaded.")
