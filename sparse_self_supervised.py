@@ -11,6 +11,7 @@ from collections import OrderedDict
 import sys
 from sparse_factorized_autoencoder import sample_dense_values_uniform, sample_k_neighbours
 from sparse_factorized_autoencoder import one_hot, expected_value
+import glob
 
 from scipy.sparse import csr_matrix
 
@@ -55,10 +56,11 @@ def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM, sam
     for n in range(N // maxN):
         for m in range(M // maxM):
 
-            ind_n = np.random.choice(temp_n, size=maxN, replace=False, p=pN)
-            select_row = np.zeros(num_vals)
-            for i in ind_n:
-                select_row[row_inds[i]:(row_inds[i]+row_counts[i])] = 1
+            ind_n = np.random.choice(temp_n, size=maxN, replace=False, p=pN)            
+            # select_row = np.zeros(num_vals)
+            # for i in ind_n:
+            #     select_row[row_inds[i]:(row_inds[i]+row_counts[i])] = 1
+            select_row = np.in1d(mask_indices[:,0], ind_n)
             rows = mask_indices[select_row==True]
 
             pM = np.bincount(rows[:,1], minlength=M).astype(np.float32)
@@ -458,9 +460,8 @@ if __name__ == "__main__":
         dae_noise_rate = .15 # drop out this proportion of input values 
         dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
-        validate_interval = 20
+        validate_interval = 1
         checkpoint_interval = 20
-
 
     ## 1M Configs
     if 'movielens-1M' in path:
@@ -470,10 +471,10 @@ if __name__ == "__main__":
         skip_connections = True
         units = 256
         learning_rate = 0.0005
-        dae_noise_rate = .1 # drop out this proportion of input values 
+        dae_noise_rate = .15 # drop out this proportion of input values 
         dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
-        validate_interval = 1
+        validate_interval = 20
         checkpoint_interval = 20
 
     if 'netflix/6m' in path:
@@ -528,9 +529,14 @@ if __name__ == "__main__":
                {'type':'channel_dropout_sparse'},               
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                {'type':'channel_dropout_sparse'},                              
-               #{'type':'channel_dropout_sparse'},
-               #{'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
-               #{'type':'channel_dropout_sparse'},
+
+               # {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               # {'type':'channel_dropout_sparse'},
+               # {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               # {'type':'channel_dropout_sparse'},
+               # {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
+               # {'type':'channel_dropout_sparse'},
+
                {'type':'matrix_sparse', 'units':units, 'skip_connections':skip_connections},
                {'type':'matrix_sparse', 'units':5, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                ],
@@ -571,6 +577,7 @@ if __name__ == "__main__":
     }
     if auto_restore:        
 
+        # restore_point_epoch = '01200'
         restore_point_epoch = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt*" % (opts.get('model_name', "test"))))[-1].split(".")[0].split("_")[-1]
         restore_point = opts['ckpt_folder'] + "/%s_checkpt_ep_" % (opts.get('model_name', "test")) + restore_point_epoch + ".ckpt"
         print("Restoring from %s" % restore_point)
