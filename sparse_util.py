@@ -41,6 +41,16 @@ def sparse_array_to_dense(values, mask_indices, shape):
     return out
 
 
+def dense_vector_to_sparse_values(x, mask_indices):
+    """Collect values from x that correspond to indices of mask_indices."""
+    if x.shape[0] == 1:
+        vals = tf.gather(tf.transpose(x, perm=[1,0,2]), mask_indices[:,1])
+        # vals = tf.gather(x, mask_indices[:,1], axis=1)
+    elif x.shape[1] == 1:
+        vals = tf.gather(x, mask_indices[:,0])
+    return tf.reshape(vals, [-1])    
+
+
 def dense_tensor_to_sparse(x, mask_indices=None, shape=None):
     """Like dense_array_to_sparse, but for tensorflow tensors."""
     if shape is None:
