@@ -51,15 +51,15 @@ def sample_dense_values_uniform(mask_indices, minibatch_size, iters_per_epoch):
         sample = np.random.choice(num_vals, size=minibatch_size, replace=False)
         yield sample
 
-def sample_dense_values_uniform_val(mask_indices, mask_tr_val_split, minibatch_size, iters_per_epoch):
-    num_vals_tr = mask_indices[mask_tr_val_split == 0].shape[0]
-    num_vals_val = mask_indices[mask_tr_val_split == 1].shape[0]
-    minibatch_size_tr = np.minimum(int(.9 * minibatch_size), num_vals_tr)
-    minibatch_size_val = np.minimum(int(.1 * minibatch_size), num_vals_val)
-    for n in range(iters_per_epoch):
-        sample_tr = np.random.choice(num_vals_tr, size=minibatch_size_tr, replace=False)
-        sample_val = np.random.choice(num_vals_val, size=minibatch_size_val, replace=False)
-        yield sample_tr, sample_val
+# def sample_dense_values_uniform_val(mask_indices, mask_tr_val_split, minibatch_size, iters_per_epoch):
+#     num_vals_tr = mask_indices[mask_tr_val_split == 0].shape[0]
+#     num_vals_val = mask_indices[mask_tr_val_split == 1].shape[0]
+#     minibatch_size_tr = np.minimum(int(.9 * minibatch_size), num_vals_tr)
+#     minibatch_size_val = np.minimum(int(.1 * minibatch_size), num_vals_val)
+#     for n in range(iters_per_epoch):
+#         sample_tr = np.random.choice(num_vals_tr, size=minibatch_size_tr, replace=False)
+#         sample_val = np.random.choice(num_vals_val, size=minibatch_size_val, replace=False)
+#         yield sample_tr, sample_val
 
 def conditional_sample_sparse(mask_indices, tr_val_split, shape, maxN, maxM): # AKA Kevin sampling 
     N,M,_ = shape
@@ -535,11 +535,13 @@ def main(opts, logfile=None, restore_point=None):
                                     lossfn=lossfn,
                                     minibatch_size=minibatch_size / 100)
                 else:
-                    entries_val = np.zeros(data['mask_indices_all'].shape[0])
-                    entries_val_count = np.zeros(data['mask_indices_all'].shape[0])
+                    # entries_val = np.zeros(data['mask_indices_all'].shape[0])
+                    predictions_val = np.mean(data['mat_values_tr']) * np.ones(data['mask_indices_all'].shape[0])
+
+                    predictions_val_count = np.zeros(data['mask_indices_all'].shape[0])
                     num_entries_val = data['mask_indices_val'].shape[0]
                                     
-                    while np.sum(entries_val_count) < .95 * num_entries_val:
+                    while np.sum(predictions_val_count) < opts['validation_threshold'] * num_entries_val:
                         for sample_tr_, sample_val_, sample_tr_val_, _, _ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
 
                             mat_values_tr_ = data['mat_values_all'][sample_tr_]
@@ -560,19 +562,19 @@ def main(opts, logfile=None, restore_point=None):
                                         }
 
                             bloss_val, beout_val, = sess.run([rec_loss_val, eout_val], feed_dict=val_dict)
+                            predictions_val[sample_val_] = beout_val[mask_split_ == 1.]
+                            predictions_val_count[sample_val_] = 1 
 
-                            losses_val = (data['mat_values_all'][sample_val_] - beout_val[mask_split_ == 1.])**2
+                    loss_val_ = np.sqrt(np.mean( (data['mat_values_all'][data['mask_tr_val_split'] == 1] - predictions_val[data['mask_tr_val_split'] == 1])**2 ))
 
-                            entries_val[sample_val_] = losses_val # intit zeros(data['mat_values_all'].size())
-                            entries_val_count[sample_val_] = 1 # init zeros()
-                    loss_val_ = np.sqrt(np.sum(entries_val) / np.sum(entries_val_count))
                     ## Test Loss
                     print("Testing: ")
-                    entries_ts = np.zeros(data['mask_indices_all'].shape[0])
-                    entries_ts_count = np.zeros(data['mask_indices_all'].shape[0])
+                    predictions_ts = np.mean(data['mat_values_tr_val']) * np.ones(data['mask_indices_all'].shape[0])
+
+                    predictions_ts_count = np.zeros(data['mask_indices_all'].shape[0])
                     num_entries_ts = data['mask_indices_test'].shape[0]
 
-                    while np.sum(entries_ts_count) < .95 * num_entries_ts:
+                    while np.sum(predictions_ts_count) < opts['validation_threshold'] * num_entries_ts:
                         for sample_tr_, _, sample_tr_val_, sample_ts_, sample_all_ in tqdm(conditional_sample_sparse(data['mask_indices_all'], data['mask_tr_val_split'], [N,M,1], maxN, maxM), total=iters_per_epoch):
 
                             mat_values_tr_val_ = data['mat_values_all'][sample_tr_val_]
@@ -593,13 +595,10 @@ def main(opts, logfile=None, restore_point=None):
                                     }
 
                             bloss_test, beout_ts, = sess.run([rec_loss_val, eout_val], feed_dict=test_dict)
+                            predictions_ts[sample_ts_] = beout_ts[mask_split_ == 1.]
+                            predictions_ts_count[sample_ts_] = 1 
 
-                            losses_ts = (data['mat_values_all'][sample_ts_] - beout_ts[mask_split_ == 1.])**2
-
-                            entries_ts[sample_ts_] = losses_ts # intit zeros(data['mat_values_all'].size())
-                            entries_ts_count[sample_ts_] = 1 # init zeros()
-
-                    loss_ts_ = np.sqrt(np.sum(entries_ts) / np.sum(entries_ts_count))
+                    loss_ts_ = np.sqrt(np.mean(  (data['mat_values_all'][data['mask_tr_val_split'] == 2] - predictions_ts[data['mask_tr_val_split'] == 2])**2  ))
                 
                 losses['valid'].append(loss_val_)
                 losses['test'].append(loss_ts_)
@@ -640,8 +639,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         LOG = open(sys.argv[1], "w", 0)
     # path = 'movielens-TEST'
-    # path = 'movielens-100k'
-    path = 'movielens-1M'
+    path = 'movielens-100k'
+    # path = 'movielens-1M'
     # path = 'netflix/6m'
     # path = 'netflix/full'
 
@@ -711,11 +710,11 @@ if __name__ == "__main__":
            'output_file':'output',
            'validate_interval':validate_interval,
            'checkpoint_interval':checkpoint_interval,
+           'validation_threshold':.99, # Make sure we sample at least this proportion of validation entries.
            'save_best':True,
            'encoder':[
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
                {'type':'matrix_sparse', 'units':units, "attention_pooling":ap},
-               #{'type':'matrix_dropout_sparse'},
                {'type':'matrix_sparse', 'units':latent_features, 'activation':None},#units before matrix-pool is the number of latent features for each movie and each user in the factorization
                {'type':'matrix_pool_sparse'},
                ],
@@ -766,29 +765,18 @@ if __name__ == "__main__":
                 }
             },
            'lr':learning_rate,
-           'sample_mode':'neighbourhood'#'conditional_sample_sparse' # by_row_column_density, uniform_over_dense_values, conditional_sample_sparse
+           'sample_mode':'conditional_sample_sparse'#neighbourhood'#'conditional_sample_sparse' # by_row_column_density, uniform_over_dense_values, conditional_sample_sparse
            
     }
+    restore_point = None
     if auto_restore:        
-
-        ## glob doesn't find any files since they are named *.ckpt.meta, etc. So do it with string split
+        checkpoints = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt*" % (opts.get('model_name', "test"))))
+        if len(checkpoints) > 0:
+            restore_point_epoch = checkpoints[-1].split(".")[0].split("_")[-1]
+            restore_point = opts['ckpt_folder'] + "/%s_checkpt_ep_" % (opts.get('model_name', "test")) + restore_point_epoch + ".ckpt"
+            print("Restoring from %s" % restore_point)
+            opts["restore_point_epoch"] = int(restore_point_epoch) # Pass num_epochs so far to start counting from there. In case of another crash 
         
-        # checkpoints = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt" % (opts.get('model_name', "test"))))
-        # if len(checkpoints) > 0:
-        #     restore_point = checkpoints[-1]
-        #     print("Restoring from %s" % restore_point)
-        # else:
-        #     restore_point = None
-
-        restore_point_epoch = sorted(glob.glob(opts['ckpt_folder'] + "/%s_checkpt_ep_*.ckpt*" % (opts.get('model_name', "test"))))[-1].split(".")[0].split("_")[-1]
-        restore_point = opts['ckpt_folder'] + "/%s_checkpt_ep_" % (opts.get('model_name', "test")) + restore_point_epoch + ".ckpt"
-        print("Restoring from %s" % restore_point)
-
-        opts["restore_point_epoch"] = int(restore_point_epoch) # Pass num_epochs so far to start counting from there. In case of another crash 
-
-
-    else:
-        restore_point = None
     main(opts, restore_point=restore_point)
 
 
