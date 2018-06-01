@@ -460,7 +460,7 @@ if __name__ == "__main__":
         dae_noise_rate = .15 # drop out this proportion of input values 
         dae_loss_alpha = 1.  # proportion of loss assigned to predicting droped out values 
         l2_regularization = .00001
-        validate_interval = 1
+        validate_interval = 10
         checkpoint_interval = 20
 
     ## 1M Configs

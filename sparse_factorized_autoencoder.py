@@ -650,8 +650,8 @@ if __name__ == "__main__":
 
     ## 100k Configs
     if 'movielens-100k' in path:        
-        maxN = 300
-        maxM = 300
+        maxN = 30000
+        maxM = 30000
         minibatch_size = 5000000        
         units = 220
         latent_features = 100
@@ -699,8 +699,6 @@ if __name__ == "__main__":
            'loss':lossfn,
            'optimizer':"adam",
            'opt_options':{"epsilon":1e-6},
-           # 'maxN':943,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
-           # 'maxM':1682,#num movies per submatrix
            'maxN':maxN,#num of users per submatrix/mini-batch, if it is the total users, no subsampling will be performed
            'maxM':maxM,#num movies per submatrix
            'minibatch_size':minibatch_size,
