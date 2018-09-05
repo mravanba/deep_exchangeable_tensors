@@ -8,7 +8,7 @@ An implementation of the model found in https://arxiv.org/abs/1803.02879. We use
 
 Python 3
 
-Tensorflow
+TensorFlow
 
 MovieLens-100k or MovieLens-1M dataset: retrieved from https://grouplens.org/datasets/movielens/
 
