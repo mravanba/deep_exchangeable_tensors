@@ -16,11 +16,15 @@ MovieLens-100k or MovieLens-1M dataset: retrieved from https://grouplens.org/dat
 
 ## Models:
 
-Includes sparse implementations of two distinct models (see paper linked above for details):
+We include sparse implementations of two distinct models (see paper linked above for details):
 
 ### Sparse self-supervised model
 
-aa
+run with:
+
+```
+aaa
+```
 
 ### Sarse Factorized Autoencoder
 
