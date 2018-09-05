@@ -23,10 +23,14 @@ We include sparse implementations of two distinct models (see paper linked above
 run with:
 
 ```
-aaa
+sparse_self_supervised.py
 ```
 
 ### Sarse Factorized Autoencoder
 
-sss
+run with:
+
+```
+sparse_factorized_autoencoder.py
+```
 
